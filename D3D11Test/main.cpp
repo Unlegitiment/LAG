@@ -18,9 +18,6 @@
 #include "thirdparty/stb_image.h"
 #include "thirdparty/tiny_obj_loader.h"
 #include <algorithm>
-#include <assimp/Importer.hpp>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
 #include <shellapi.h>
 /*
     Listen you need to hear this mate.
@@ -64,40 +61,51 @@ private:
 };
 grcDevice* g_Device = new grcDevice();
 #define GRCDEVICE g_Device
+#define LAG_PC
 //We lock before a bind operation to prevent any data from being outgoing to a buffer object. So when we set data set buffer as unlocked.
-class GPUBuffer {
-public:
-    enum BufferLockStatus {
-        LOCKED = false,
-        UNLOCKED = true,
-    };
-protected:
-    ID3D11Buffer* m_pBuffer;
-    BufferLockStatus m_bBufferLockStatus;
-public:
-    GPUBuffer();
-    virtual void CreateBufferOnGPU() {
-        //throw an unimplemented exception here;
-        return;
-
-    };
-    virtual void LockBuffer() noexcept {
-        this->m_bBufferLockStatus = LOCKED;
-    }
-    virtual void UnlockBuffer() noexcept {
-        this->m_bBufferLockStatus = UNLOCKED;
-    }
-    virtual bool IsBufferLocked() noexcept {
-        this->m_pBuffer = nullptr;
-        return m_bBufferLockStatus == LOCKED;
-    }
-    virtual void SetData(void* ptr) = 0;
-    virtual void Bind() const = 0;
-};
+//class GPUBuffer {
+//public:
+//    enum BufferLockStatus {
+//        LOCKED = false,
+//        UNLOCKED = true,
+//    };
+//protected:
+//    ID3D11Buffer* m_pBuffer;
+//    BufferLockStatus m_bBufferLockStatus;
+//public:
+//    GPUBuffer();
+//    virtual void CreateBufferOnGPU() {
+//        //throw an unimplemented exception here;
+//        return;
+//
+//    };
+//    virtual void LockBuffer() noexcept {
+//        this->m_bBufferLockStatus = LOCKED;
+//    }
+//    virtual void UnlockBuffer() noexcept {
+//        this->m_bBufferLockStatus = UNLOCKED;
+//    }
+//    virtual bool IsBufferLocked() noexcept {
+//        this->m_pBuffer = nullptr;
+//        return m_bBufferLockStatus == LOCKED;
+//    }
+//    virtual void SetData(void* ptr) = 0;
+//    virtual void Bind() const = 0;
+//};
 /* Example to illustrate why I don't fw SOLID but also it kinda proves my anti-point a lil bit cause im an idiot. The code is so drawn out but also so decoupled and its strange that I just thought of this. 
 */
+//platform specific details
+typedef unsigned char u8;
+typedef signed char s8;
+typedef unsigned short u16;
+typedef signed short s16;
+typedef unsigned int u32;
+typedef signed int s32;
+typedef unsigned long long u64;
+typedef signed long long s64;
 
 class FWBuffer {
+protected:
     void* m_ptr;
 public:
     FWBuffer(const void* ptr); // would set m_ptr;
@@ -105,29 +113,78 @@ public:
     virtual void SetPtr(void* ptr) { this->m_ptr = ptr; }
 };
 
-class GPUBuffer : public FWBuffer {
+class GPUBuffer {
+    typedef ID3D11Buffer D3DInternal; // create struct definition shit above.
+public:
+    enum BufferUsage {
+        DEFAULT, // DEFAULT
+        GPUReadOnly, // IMMUTABLE
+        CPUWriteGpuRead, // DYNAMIC
+        CPUWriteReadGPUCopy // STAGING
+    };
+    enum BindType {
+        VERTEX_BUFFER,
+        INDEX_BUFFER,
+        CONSTANT_BUFFER,
+        SHADER_RESOURCE,
+        UNORDERED_ACCESS,
+    };
+    GPUBuffer(const void* datExist, u32 count, u32 stride, u32 offset, u32 usage, u32 cpuaccess, u32 bindType, u32 misc) {
+        CreateInternal(datExist, count, stride, offset, usage,cpuaccess, bindType,misc);
+    }
+    D3DInternal* GetRawBuffer() { return this->m_pGPUBuffer; }
+private:
+    void CreateInternal(const void* datExist, u32 count, u32 stride, u32 offset, u32 usage, u32 cpuaccess, u32 bindType, u32 misc) { // make last 3 parameters enums seen above. match d3d11
+        D3D11_BUFFER_DESC bufferdesc = {};
+
+        bufferdesc.ByteWidth = stride * count;
+        
+        bufferdesc.CPUAccessFlags = cpuaccess;
+        
+        bufferdesc.Usage = (D3D11_USAGE)usage;
+        
+        bufferdesc.MiscFlags = misc;
+
+        D3D11_SUBRESOURCE_DATA srd = {}; // 1/3 is useful other two are for textures 2d/3d.
+        srd.pSysMem = datExist;
+        GRCDEVICE->GetDevice()->CreateBuffer(&bufferdesc, &srd, &m_pGPUBuffer);
+    }
     ID3D11Buffer* m_pGPUBuffer;
-    GPUBuffer(const void* ptr); // fall through again.
-    virtual void Bind(ID3D11DeviceContext* context) = 0; // Pipeline
 };
-class GPUVertexBuffer: public GPUBuffer{
-    uint32_t stride, offsets;
-    GPUVertexBuffer(const void* ptr, uint32_t stride, uint32_t offsets); 
-    virtual void Bind(ID3D11DeviceContext* context){
-        context->IASetVertexBuffers();
-    }
+class GPUVertexBuffer {
+public:
+    GPUVertexBuffer(const void* vertexinfo, u32 count, u32 stride) : m_pBuffer(vertexinfo, count, stride, 0, D3D11_USAGE_IMMUTABLE, 0, D3D11_BIND_VERTEX_BUFFER, 0){}
+    GPUBuffer& GetBuffer() { return this->m_pBuffer; }
+    GPUBuffer* GetBufferPtr() { return &this->m_pBuffer; }
+
+    ID3D11Buffer* GetRawBuffer() { return this->m_pBuffer.GetRawBuffer(); }
+private:
+    GPUBuffer m_pBuffer;
 };
-class GPUIndexBuffer : public GPUBuffer{
-    GPUIndexBuffer(int* arr, int size); // you'd have to cast void* on arr to set up the next buffer;
-    virtual void Bind(ID3D11DeviceContext* context){
-        context->IASetIndexBuffer();
-    }
+class GPUIndexBuffer {
+public:
+    GPUIndexBuffer(const u32* vertexinfo, u32 count, u32 stride) : m_pBuffer(vertexinfo, count, stride, 0, D3D11_USAGE_IMMUTABLE, 0, D3D11_BIND_INDEX_BUFFER, 0) {}
+    GPUBuffer& GetBuffer() { return this->m_pBuffer; }
+    GPUBuffer* GetBufferPtr() { return &this->m_pBuffer; }
+    ID3D11Buffer* GetRawBuffer() { return this->m_pBuffer.GetRawBuffer(); }
+private:
+    GPUBuffer m_pBuffer;
 };
 
-class GPUConstantBuffer : public GPUBuffer{
-    void Bind(ID3D11DeviceContext* context){
-        (); 
+class GPUConstantBuffer {
+       //Problem is here GPUConstantBuffers have to be defined in a way that the buffer can be bound. Issue is that we are sure able to bind the buffer but the thing is that Binding here only leads to issues. Might rework this class to not be a member of GPUBuffer. or any and just have them take composition over inheritance model in this place.
+       // There is-a relationship between this and the GPUBuffer however generally prefering composition serves well enough here. 
+       // Also cause binding isn't a problem and GPUBuffer should just store the information necessary to get locally accessible buffers not other stuff. Binding is a different part of the pipeline and while this is bindable you might not want to bind a Constant Buffer given the shit that happened previously.  
+public:
+    GPUConstantBuffer(void* m_ptr, u32 size) : m_pBuffer(){
+
     }
+    GPUBuffer& GetBuffer() { return this->m_pBuffer; }
+    GPUBuffer* GetBufferPtr() { return &this->m_pBuffer; }
+    ID3D11Buffer* GetRawBuffer() { return this->m_pBuffer.GetRawBuffer(); }
+private:
+    GPUBuffer m_pBuffer;
+    u32 size;
 };
 #pragma comment(lib, "user32")
 #pragma comment(lib, "d3d11.lib")
@@ -485,52 +542,52 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     object1.SetMesh(device.GetDevice(), vertices, indices);
 
     /*Physical object3 = Physical(, {modeltranslation, modelrotation, modelscale});*/
-    Assimp::Importer imp;
-    auto model = imp.ReadFile("W:\\Engine\\D3D11Test\\D3D11Test\\Models\\teapot.obj", aiProcess_Triangulate | aiProcess_GenUVCoords);
-    const auto pMesh = model->mMeshes[0];
-    
-    std::vector<Vertex> rahhhhhWannn;
-    rahhhhhWannn.reserve((pMesh->mNumVertices));
-    //maybe data isn't the same stride when using this method? I don't quite know how to debug this one? Maybe just flood the vector with data?
-    int selectedTextureCoordinateLookup = -1;
-    for (int i = 0; i < AI_MAX_NUMBER_OF_TEXTURECOORDS; i++) {
-        if (pMesh->HasTextureCoords(i)) {
-            selectedTextureCoordinateLookup = i;
-        }
-    }
+    //Assimp::Importer imp;
+    //auto model = imp.ReadFile("W:\\Engine\\D3D11Test\\D3D11Test\\Models\\teapot.obj", aiProcess_Triangulate | aiProcess_GenUVCoords);
+    //const auto pMesh = model->mMeshes[0];
+    //
+    //std::vector<Vertex> rahhhhhWannn;
+    //rahhhhhWannn.reserve((pMesh->mNumVertices));
+    ////maybe data isn't the same stride when using this method? I don't quite know how to debug this one? Maybe just flood the vector with data?
+    //int selectedTextureCoordinateLookup = -1;
+    //for (int i = 0; i < AI_MAX_NUMBER_OF_TEXTURECOORDS; i++) {
+    //    if (pMesh->HasTextureCoords(i)) {
+    //        selectedTextureCoordinateLookup = i;
+    //    }
+    //}
     //if (selectedTextureCoordinateLookup == -1) {
     //    assert(false && "Selected Texture Coordinate is still -1! Shit!");
     //}
     const float scalef = 1.f;
-    for (int i = 0; i < pMesh->mNumVertices; i++) {
-        Vertex vertex{};
-        vertex.VERTEX_POS = { pMesh->mVertices[i].x * scalef, pMesh->mVertices[i].y * scalef, pMesh->mVertices[i].z * scalef, }; // 1.0f represents scale
-        if (pMesh->mTextureCoords[0]) {
-            vertex.UVCOORD = { pMesh->mTextureCoords[0][i].x,pMesh->mTextureCoords[0][i].y }; // 1.0f represents scale
-        }
-        int meshData = model->mNumTextures;
-        int colorData = pMesh->GetNumColorChannels();
-        
-        //assert(false && meshData);
-        if (pMesh->HasNormals()) {
-            vertex.NORMAL = { pMesh->mNormals[i].x, pMesh->mNormals[i].y, pMesh->mNormals[i].z };
-        }
-        vertex.COLOR = { 0.5f,0.5f,0.5f };  // 1.0f represents scale
-        rahhhhhWannn.push_back(vertex); // fuck me sideways.
-        
-    }
-    std::vector<int> MODELINDICES(pMesh->mNumFaces * 3);
-    for (int i = 0; i < pMesh->mNumFaces; i++) {
-        const auto& face = pMesh->mFaces[i];
-        assert(face.mNumIndices == 3);
-        MODELINDICES.push_back(face.mIndices[0]);
-        MODELINDICES.push_back(face.mIndices[1]);
-        MODELINDICES.push_back(face.mIndices[2]);
-        
-    }
-    //vertex is filled with zeros and no matter what I do can't seem to get it to work? for loop isn't skipped? what is causing this discrepancy.
-    object2.SetMesh(device.GetDevice(), rahhhhhWannn, MODELINDICES);
-    object2.SetTexture(device.GetDevice(), tData);
+    //for (int i = 0; i < pMesh->mNumVertices; i++) {
+    //    Vertex vertex{};
+    //    vertex.VERTEX_POS = { pMesh->mVertices[i].x * scalef, pMesh->mVertices[i].y * scalef, pMesh->mVertices[i].z * scalef, }; // 1.0f represents scale
+    //    if (pMesh->mTextureCoords[0]) {
+    //        vertex.UVCOORD = { pMesh->mTextureCoords[0][i].x,pMesh->mTextureCoords[0][i].y }; // 1.0f represents scale
+    //    }
+    //    int meshData = model->mNumTextures;
+    //    int colorData = pMesh->GetNumColorChannels();
+    //    
+    //    //assert(false && meshData);
+    //    if (pMesh->HasNormals()) {
+    //        vertex.NORMAL = { pMesh->mNormals[i].x, pMesh->mNormals[i].y, pMesh->mNormals[i].z };
+    //    }
+    //    vertex.COLOR = { 0.5f,0.5f,0.5f };  // 1.0f represents scale
+    //    rahhhhhWannn.push_back(vertex); // fuck me sideways.
+    //    
+    //}
+    //std::vector<int> MODELINDICES(pMesh->mNumFaces * 3);
+    //for (int i = 0; i < pMesh->mNumFaces; i++) {
+    //    const auto& face = pMesh->mFaces[i];
+    //    assert(face.mNumIndices == 3);
+    //    MODELINDICES.push_back(face.mIndices[0]);
+    //    MODELINDICES.push_back(face.mIndices[1]);
+    //    MODELINDICES.push_back(face.mIndices[2]);
+    //    
+    //}
+    ////vertex is filled with zeros and no matter what I do can't seem to get it to work? for loop isn't skipped? what is causing this discrepancy.
+    //object2.SetMesh(device.GetDevice(), rahhhhhWannn, MODELINDICES);
+    //object2.SetTexture(device.GetDevice(), tData);
     auto ret = CreateD3DBuffer(device.GetDevice(), vertexdata, sizeof(vertexdata) / sizeof(vertexdata[0]), indexdata, sizeof(indexdata) / sizeof(indexdata[0]));
     object1.ObjectMesh.gpuVertexBuffer = ret.first;
     object1.ObjectMesh.gpuIndexBuffer= ret.second;
