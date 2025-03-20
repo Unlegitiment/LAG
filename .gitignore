@@ -30,9 +30,12 @@
 *.exe
 *.out
 *.app
+<<<<<<< HEAD
 /vcpkg_installed
 /.vs/D3D11Test
 /x64
 /vcpkg-configuration.json
 /vcpkg.json
 /D3D11Test/x64
+=======
+>>>>>>> ca990b43088fb3fd22c06ea5956b6fc6f46c88a8
