@@ -30,3 +30,9 @@
 *.exe
 *.out
 *.app
+/vcpkg_installed
+/.vs/D3D11Test
+/x64
+/vcpkg-configuration.json
+/vcpkg.json
+/D3D11Test/x64
