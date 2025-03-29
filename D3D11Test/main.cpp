@@ -19,22 +19,12 @@
 #include "thirdparty/tiny_obj_loader.h"
 #include <algorithm>
 #include <shellapi.h>
+#include "resourcehandling.h"
 /*
-    Listen you need to hear this mate.
-    This program can be fixed you just need to dedicate to a design.
-    There is nothing more I can tell you other than you need to grasp how this stuff works.
-    Its simple concepts but they are very confusing.
-    There is nothing you cannot do. You are hammering your mind now but you need to grasp this stuff. I think you know how to write software architecture you just need a push.
-    This is that push. You need to use your head. You've hammered out things before you need to do it again. Or else Rockstar won't wait for you to catch up.
-    You know how to write the code you just need to go out and write it. Turn off your brain and just write the first thing that comes to your head. Even if its a Bindable system just like Chili you need to write something
-    You need to initiate something in writing else you'll be another failed Graphics/Engine programmer.
-    Write something for me. Please. Its really not that hard. You keep looking at the downsides of the architecture you wonder how stuff will work but you don't dedicate yourself to trying to find out how something works
-    Listen shaders are built into material properties. Which is both confusing but also possible to understand. You just need to understand that shaders are nothing more than programs that alter the image and that take place on the GPU.
-    That is all you need to know. Shaders are simple you just need to know how to write them and that is the whole point of your job.
-    So figure it out. Clearly Rockstar Knows how to use an Input Assembler so either start reading and adapting their code or just kiss your dream job away.
-    You don't need a break its not like slamming your head against a wall you know how to fight this. You just need the tools to write this code. Even if its just a Render-data system that holds quite literally everything together. You can still do this.
-    Look at the Rockstar RenderDoc samples. Its quite literally draw fundamental details-> draw important decals. All it is, is material properties. You don't understand the architecture because its so complex nobody could understand all of it.
-    You just need to write something go look at something go get some help for this. Else your gonna be dead in the water.
+    Ok jesus christ. We've finally figured out textures. which means we've basically done looked into everything in terms of how stuff is working
+    Views are just different metadata for buffers/textures. 
+    Textures and Buffers are synonomous one just on the surface means an Image whilst the other means a Buffer of data. 
+    Views allow you to have multiple inputs and outputs to textures. which explains that we need a rendertargetview to the backbuffer.
 */
 
 class grcDevice {
@@ -103,89 +93,14 @@ typedef unsigned int u32;
 typedef signed int s32;
 typedef unsigned long long u64;
 typedef signed long long s64;
+/*
+    Naming Scheme:
+    'fw' is equivalent to 'I' in the case of Interfaces. I prefer Framework more. Like a schema. for example fwShaderProgram = Framework Shader Program. 
+    Graphics:
+    'grc' = Graphics Core. Anything that is generally associated with graphics. Also its very nice to type on the keyboard quickly :)
 
-class FWBuffer {
-protected:
-    void* m_ptr;
-public:
-    FWBuffer(const void* ptr); // would set m_ptr;
-    virtual void* GetPtr() { return this->m_ptr; }
-    virtual void SetPtr(void* ptr) { this->m_ptr = ptr; }
-};
 
-class GPUBuffer {
-    typedef ID3D11Buffer D3DInternal; // create struct definition shit above.
-public:
-    enum BufferUsage {
-        DEFAULT, // DEFAULT
-        GPUReadOnly, // IMMUTABLE
-        CPUWriteGpuRead, // DYNAMIC
-        CPUWriteReadGPUCopy // STAGING
-    };
-    enum BindType {
-        VERTEX_BUFFER,
-        INDEX_BUFFER,
-        CONSTANT_BUFFER,
-        SHADER_RESOURCE,
-        UNORDERED_ACCESS,
-    };
-    GPUBuffer(const void* datExist, u32 count, u32 stride, u32 offset, u32 usage, u32 cpuaccess, u32 bindType, u32 misc) {
-        CreateInternal(datExist, count, stride, offset, usage,cpuaccess, bindType,misc);
-    }
-    D3DInternal* GetRawBuffer() { return this->m_pGPUBuffer; }
-private:
-    void CreateInternal(const void* datExist, u32 count, u32 stride, u32 offset, u32 usage, u32 cpuaccess, u32 bindType, u32 misc) { // make last 3 parameters enums seen above. match d3d11
-        D3D11_BUFFER_DESC bufferdesc = {};
-
-        bufferdesc.ByteWidth = stride * count;
-        
-        bufferdesc.CPUAccessFlags = cpuaccess;
-        
-        bufferdesc.Usage = (D3D11_USAGE)usage;
-        
-        bufferdesc.MiscFlags = misc;
-
-        D3D11_SUBRESOURCE_DATA srd = {}; // 1/3 is useful other two are for textures 2d/3d.
-        srd.pSysMem = datExist;
-        GRCDEVICE->GetDevice()->CreateBuffer(&bufferdesc, &srd, &m_pGPUBuffer);
-    }
-    ID3D11Buffer* m_pGPUBuffer;
-};
-class GPUVertexBuffer {
-public:
-    GPUVertexBuffer(const void* vertexinfo, u32 count, u32 stride) : m_pBuffer(vertexinfo, count, stride, 0, D3D11_USAGE_IMMUTABLE, 0, D3D11_BIND_VERTEX_BUFFER, 0){}
-    GPUBuffer& GetBuffer() { return this->m_pBuffer; }
-    GPUBuffer* GetBufferPtr() { return &this->m_pBuffer; }
-
-    ID3D11Buffer* GetRawBuffer() { return this->m_pBuffer.GetRawBuffer(); }
-private:
-    GPUBuffer m_pBuffer;
-};
-class GPUIndexBuffer {
-public:
-    GPUIndexBuffer(const u32* vertexinfo, u32 count, u32 stride) : m_pBuffer(vertexinfo, count, stride, 0, D3D11_USAGE_IMMUTABLE, 0, D3D11_BIND_INDEX_BUFFER, 0) {}
-    GPUBuffer& GetBuffer() { return this->m_pBuffer; }
-    GPUBuffer* GetBufferPtr() { return &this->m_pBuffer; }
-    ID3D11Buffer* GetRawBuffer() { return this->m_pBuffer.GetRawBuffer(); }
-private:
-    GPUBuffer m_pBuffer;
-};
-
-class GPUConstantBuffer {
-       //Problem is here GPUConstantBuffers have to be defined in a way that the buffer can be bound. Issue is that we are sure able to bind the buffer but the thing is that Binding here only leads to issues. Might rework this class to not be a member of GPUBuffer. or any and just have them take composition over inheritance model in this place.
-       // There is-a relationship between this and the GPUBuffer however generally prefering composition serves well enough here. 
-       // Also cause binding isn't a problem and GPUBuffer should just store the information necessary to get locally accessible buffers not other stuff. Binding is a different part of the pipeline and while this is bindable you might not want to bind a Constant Buffer given the shit that happened previously.  
-public:
-    GPUConstantBuffer(void* m_ptr, u32 size) : m_pBuffer(){
-
-    }
-    GPUBuffer& GetBuffer() { return this->m_pBuffer; }
-    GPUBuffer* GetBufferPtr() { return &this->m_pBuffer; }
-    ID3D11Buffer* GetRawBuffer() { return this->m_pBuffer.GetRawBuffer(); }
-private:
-    GPUBuffer m_pBuffer;
-    u32 size;
-};
+*/
 #pragma comment(lib, "user32")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -266,6 +181,19 @@ struct TextureData {
     void* textureData;
     DXGI_FORMAT Format;
 };
+int64_t JOAAT(const char* string) {
+    size_t i = 0;
+    uint32_t hash = 0;
+    while (i != '\0') {
+        hash += string[i++];
+        hash += hash << 10;
+        hash ^= hash >> 6;
+    }
+    hash += hash << 3;
+    hash ^= hash >> 11;
+    hash += hash << 15;
+    return hash;
+}
 class Physical { // physical representation of something
 public:
     Physical(std::vector<Vertex>& vertex, Transform transform) :
@@ -275,6 +203,7 @@ public:
 
     }
     void SetMesh(ID3D11Device* Device, std::vector<Vertex>& Vertexdata, std::vector<int>& IndexData) {
+
         this->ObjectMesh.VertexBuffer = Vertexdata;
         this->ObjectMesh.IndexBuffer = IndexData;
         D3D11_BUFFER_DESC vBufferDesc = {};
@@ -284,7 +213,6 @@ public:
         D3D11_SUBRESOURCE_DATA initData{};
         initData.pSysMem = this->ObjectMesh.VertexBuffer.data();
         Device->CreateBuffer(&vBufferDesc, &initData, &this->ObjectMesh.gpuVertexBuffer);
-
         D3D11_BUFFER_DESC indexbufferdesc = {};
         indexbufferdesc.ByteWidth = sizeof(int) * IndexData.size();
         indexbufferdesc.Usage = D3D11_USAGE_IMMUTABLE;
@@ -292,6 +220,15 @@ public:
         D3D11_SUBRESOURCE_DATA indexbufferSRD = { IndexData.data() };
         ID3D11Buffer* indexBuffer;
         Device->CreateBuffer(&indexbufferdesc, &indexbufferSRD, &this->ObjectMesh.gpuIndexBuffer);
+    }
+    /*
+    Soo I need something more grandiose. 
+    So basically issue is that grcResourceManager doesn't know about the index buffer. 
+    So I need someway to sub-resource initate small data into a grcResource or also get access to a different part of it? 
+    Since the hash can work issue is that I need to access different data. 
+    */
+    void SetMeshNew(const char* fileName, void* vertexdata, int size_vertex, int* indexData, int size_index) {
+
     }
     void SetTexture(ID3D11Device* Device, TextureData textureIn) {
         D3D11_TEXTURE2D_DESC textureDesc = {};
@@ -320,6 +257,68 @@ public:
 private:
 
 };
+enum eShaderType {
+    VERTEX,
+    PIXEL,
+    MAX_SHADER_TYPES
+};
+
+class fwShader {
+public:
+    fwShader();
+    eShaderType GetShaderType() { return this->m_iShaderType; }
+    virtual void Bind() = 0; // 
+protected:
+    eShaderType m_iShaderType;
+};
+class fwVertexShader : public fwShader{
+public:
+    fwVertexShader(ID3D11VertexShader* shader) {
+        this->m_ShaderInstance = shader;
+        this->m_iShaderType = VERTEX;
+    }
+    void Bind() {
+        GRCDEVICE->GetContext()->VSSetShader(this->m_ShaderInstance, nullptr, 0);
+    }
+private:
+    ID3D11VertexShader* m_ShaderInstance;
+};
+class fwPixelShader : public fwShader {
+public:
+    fwPixelShader(ID3D11PixelShader* shader) {
+        this->m_ShaderInstance = shader;
+        this->m_iShaderType = PIXEL
+    }
+    void Bind() {
+        GRCDEVICE->GetContext()->PSSetShader(this->m_ShaderInstance, nullptr, 0);
+    }
+private:
+    ID3D11PixelShader* m_ShaderInstance;
+};
+template<typename T> class SingletonDef : protected T{
+private:
+    static T* sm_pInstance;
+    SingletonDef() : T() {}
+public:
+    static T* GetInstancePtr() { assert(sm_pInstance != NULL) return this->sm_pInstance; }
+    static T& GetInstance() { assert(sm_pInstance != NULL) return *this->sm_pInstance; }
+    static bool DoesInstanceExist() { return this->sm_pInstance != nullptr; }
+};
+/*
+    A Pass can have a lot of things that encompass it. Its basically an entire render context.
+    Shaders,
+    Input Assemblers, 
+    Vertex Info ( I think idk );
+
+*/
+class grcPass {
+public:
+    void SetShader(fwShader* shader) {
+        m_Shaders[shader->GetShaderType()] = shader;
+    }
+private:
+    fwShader* m_Shaders[MAX_SHADER_TYPES];
+};
 
 template<typename T>
 T wrap_angle(T theta) noexcept {
@@ -332,6 +331,7 @@ T wrap_angle(T theta) noexcept {
     }
     return mod;
 }
+// thanks overflow
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 bool global_Size = false;
@@ -373,9 +373,6 @@ double GetGlfwTimer() {
 using namespace lage;
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
     int cmdcount = 0;    LPWSTR* cmdArgs = CommandLineToArgvW(pCmdLine, &cmdcount);
-    
-
-
     const wchar_t CLASSNAME[] = L"Sample Window Class";
     WNDCLASS wc = {};
     wc.lpfnWndProc = WindowProc;
@@ -389,6 +386,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     ShowWindow(hwnd, nCmdShow);
     GDevice device = GDevice();
     device.Init(hwnd);
+    
     HRESULT hr;
     //Depth Buffer
     D3D11_TEXTURE2D_DESC depthbufferdesc;
@@ -649,6 +647,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     DirectX::XMMATRIX VIEW;
     VIEW = DirectX::XMMatrixLookAtLH(cameraPosition, DirectX::XMVectorAdd(cameraPosition, cameraFront), cameraUp);
     const float radius = 10.0f;
+    ID3D11Texture2D*     anotherrendertarget;
+    D3D11_TEXTURE2D_DESC testDesc = {};
+    testDesc.Width = 2048;
+    testDesc.Height = 2048;
+    testDesc.MipLevels = 1;
+    testDesc.ArraySize = 1;
+    testDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+    testDesc.SampleDesc.Count = 1;
+    testDesc.Usage = D3D11_USAGE_DEFAULT;
+    testDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    device.GetDevice()->CreateTexture2D(&testDesc, nullptr, &anotherrendertarget);
+    D3D11_RENDER_TARGET_VIEW_DESC desc234{};
+    desc234.Format = DXGI_FORMAT_R32_FLOAT;
+    desc234.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+    ID3D11RenderTargetView* anotherrendertargetview;
+    device.GetDevice()->CreateRenderTargetView(anotherrendertarget, &desc234, &anotherrendertargetview);
+
     while (!should_close) {
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
@@ -782,10 +797,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
             device.GetContext()->DrawIndexed(obj->ObjectMesh.IndexBuffer.size(), 0, 0);
 
-            ImGui::Render();
-            ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
         } // end of frame
+        ImGui::Render();
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         device.GetSwapChain()->Present(1, 0);
+
+
 
     } // end of main loop
     ImGui_ImplDX11_Shutdown();
