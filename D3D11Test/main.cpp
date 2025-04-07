@@ -20,11 +20,23 @@
 #include <algorithm>
 #include <shellapi.h>
 #include "resourcehandling.h"
+#include "device.h"
+#include <unordered_map>
+using namespace lage;
 /*
     Ok jesus christ. We've finally figured out textures. which means we've basically done looked into everything in terms of how stuff is working
     Views are just different metadata for buffers/textures. 
     Textures and Buffers are synonomous one just on the surface means an Image whilst the other means a Buffer of data. 
     Views allow you to have multiple inputs and outputs to textures. which explains that we need a rendertargetview to the backbuffer.
+*/
+/*
+    Jesus Christ. Ok so for context. I keep thinking that things are more advanced in other engines but clearly the object relations are just so
+    drawn out so far out that they don't seem connected but they are. 
+    For ours we're just gonna go simplisitic. 
+    Material information goes in one area. mesh information in another. 
+    They are connected its just you've got to go through like so many systems its kinda difficult to understand where it connects anyways i come back in like 3 hrs or smth
+    and I stay awake for long time
+
 */
 
 class grcDevice {
@@ -35,7 +47,9 @@ public:
         Compute,
         Pixel,
     };
-    void Init();
+    void Init() {
+
+    }
     ID3D11Device*           GetDevice() { return this->m_pDevice; } 
     ID3D11DeviceContext*    GetContext() { return this->m_pContext; }
     IDXGISwapChain*         GetSwapChain() { return this->m_pSwapChain; }
@@ -222,10 +236,10 @@ public:
         Device->CreateBuffer(&indexbufferdesc, &indexbufferSRD, &this->ObjectMesh.gpuIndexBuffer);
     }
     /*
-    Soo I need something more grandiose. 
-    So basically issue is that grcResourceManager doesn't know about the index buffer. 
-    So I need someway to sub-resource initate small data into a grcResource or also get access to a different part of it? 
-    Since the hash can work issue is that I need to access different data. 
+        Soo I need something more grandiose. 
+        So basically issue is that grcResourceManager doesn't know about the index buffer. 
+        So I need someway to sub-resource initate small data into a grcResource or also get access to a different part of it? 
+        Since the hash can work issue is that I need to access different data. 
     */
     void SetMeshNew(const char* fileName, void* vertexdata, int size_vertex, int* indexData, int size_index) {
 
@@ -287,7 +301,7 @@ class fwPixelShader : public fwShader {
 public:
     fwPixelShader(ID3D11PixelShader* shader) {
         this->m_ShaderInstance = shader;
-        this->m_iShaderType = PIXEL
+        this->m_iShaderType = PIXEL;
     }
     void Bind() {
         GRCDEVICE->GetContext()->PSSetShader(this->m_ShaderInstance, nullptr, 0);
@@ -295,15 +309,17 @@ public:
 private:
     ID3D11PixelShader* m_ShaderInstance;
 };
-template<typename T> class SingletonDef : protected T{
+template<typename T> class SingletonDef : protected T {
 private:
     static T* sm_pInstance;
     SingletonDef() : T() {}
 public:
-    static T* GetInstancePtr() { assert(sm_pInstance != NULL) return this->sm_pInstance; }
-    static T& GetInstance() { assert(sm_pInstance != NULL) return *this->sm_pInstance; }
+    static T* GetInstancePtr() { assert(sm_pInstance != NULL); return this->sm_pInstance; }
+    static T& GetInstance() { assert(sm_pInstance != NULL); return *this->sm_pInstance; }
     static bool DoesInstanceExist() { return this->sm_pInstance != nullptr; }
 };
+
+
 /*
     A Pass can have a lot of things that encompass it. Its basically an entire render context.
     Shaders,
@@ -311,6 +327,18 @@ public:
     Vertex Info ( I think idk );
 
 */
+class grcBuffer {
+private:
+    ID3D11Buffer* m_pBuffer = nullptr;
+public:
+    grcBuffer(D3D11_BUFFER_DESC* descriptor, D3D11_SUBRESOURCE_DATA* data, lage::GDevice* dev) {
+        dev->GetDevice()->CreateBuffer(descriptor, data, &this->m_pBuffer); // we should do some more advanced management here but this is just to get the ball rolling.
+    }
+    ID3D11Buffer* GetBuffer() { return this->m_pBuffer; }
+    ID3D11Buffer** GetBufferPtr() { return &this->m_pBuffer; }
+    void SetBuffer(ID3D11Buffer* bufferptr) { this->m_pBuffer = bufferptr; }
+     
+};
 class grcPass {
 public:
     void SetShader(fwShader* shader) {
@@ -369,8 +397,288 @@ double GetGlfwTimer() {
     using SecondsFP = std::chrono::duration<double>;
     return duration_cast<SecondsFP>(high_resolution_clock::now().time_since_epoch()).count();
 }
-#include "device.h"
-using namespace lage;
+
+class grcVertexBuffer : public grcBuffer{
+public:
+    grcVertexBuffer(D3D11_BUFFER_DESC* descriptor, D3D11_SUBRESOURCE_DATA* data, UINT stride, UINT offset, GDevice* dev) : grcBuffer(descriptor, data, dev){
+        this->stride = stride;
+        this->offset = offset;
+    }
+    void BindVertexInformation(DGContext* context) {
+        context->IASetVertexBuffers(0, 1, this->GetBufferPtr(), &stride, &offset);
+    }
+private:
+    UINT stride, offset;
+};
+struct sEntityDrawShit {
+public:
+    std::vector<D3D11_INPUT_ELEMENT_DESC> inputElements;
+    grcVertexBuffer* vertexBuffer;
+    grcBuffer* indexBuffer;
+};
+/*
+    Ok it seems like they don't cache? They just have a void* to ResourceData map?
+    So like no idea wtf is going on?
+*/
+enum ResourceType {
+    RT_Texture,
+    RT_DSV,
+    RT_RSV,
+    RT_SRV,
+    RT_ConstantBuffer,
+    RT_VertexBuffer,
+    RT_IndexBuffer,
+    RT_Max
+};
+typedef struct grcResourceDesc {
+    union {
+        D3D11_TEXTURE1D_DESC Text1D;
+        D3D11_TEXTURE2D_DESC Text2D;
+        D3D11_TEXTURE3D_DESC Text3D;
+
+        D3D11_BUFFER_DESC Buffer;
+        D3D11_DEPTH_STENCIL_VIEW_DESC DSV;
+        D3D11_RENDER_TARGET_VIEW_DESC RTV;
+        D3D11_SHADER_RESOURCE_VIEW_DESC SRV;
+    };
+};
+namespace std {
+template <>
+struct hash<std::pair<ResourceType, unsigned long long>> {
+    size_t operator()(const std::pair<ResourceType, unsigned long long>& p) const {
+        size_t hash1 = std::hash<int>()(static_cast<int>(p.first));  // Hash ResourceType (which is enum)
+        size_t hash2 = std::hash<unsigned long long>()(p.second);   // Hash the unsigned long long (the hash value)
+        return hash1 ^ (hash2 << 1);  // Combine the two hashes (simple example)
+    }
+};
+}
+class grcResourceCache {
+    struct sResourceData;
+    template<typename T, typename K>    
+    using Pair = std::pair<T, K>;
+    using ResourceKey = Pair<ResourceType, u64>;
+    struct KeyHash {
+    };
+    typedef std::unordered_map<ResourceKey, sResourceData*> ActiveResources; // So idk
+    static grcResourceCache* sm_Instance;
+    GDevice* device;
+public:
+    static void InitClass(GDevice* dev) {
+        sm_Instance = new grcResourceCache();
+        sm_Instance->device = dev;
+    }
+    static grcResourceCache& GetInstance() { return *sm_Instance; }
+    struct sResourceData {
+        ResourceType Type;
+        u32 uSize;
+        grcResourceDesc Resource;
+        u64 hash;
+        void* outMemory;
+    };
+    //So lets just hash on some internal data like size of stuff. generate something similar to a unique hash cause I really don't want to take a name here in case you literally are unaware. 
+    // I'll just store it in accordance to that figure. Should make it valuable in retrospect :)
+    HRESULT CreateTexture2D(const D3D11_TEXTURE2D_DESC* pDesc, const D3D11_SUBRESOURCE_DATA* pInitialData, ID3D11Texture2D** ppTexture) {
+        assert(pDesc != nullptr);
+        u64 hash = GenHash(pDesc);
+        if (resource.find({ RT_Texture, hash }) != resource.end()) {
+            *ppTexture = (ID3D11Texture2D*)resource[{RT_Texture, hash}]->outMemory;
+            return S_OK;
+        }
+        sResourceData* data = new sResourceData(); // I wish to die. haha
+        data->hash = hash;
+        data->Type = RT_Texture;
+        device->GetDevice()->CreateTexture2D(pDesc, pInitialData, (ID3D11Texture2D**) &data->outMemory);
+        data->uSize = sizeof pDesc;
+        data->Resource.Text2D = *pDesc; // uhh shitfuck?
+        *ppTexture = (ID3D11Texture2D*)data->outMemory;
+        Cache(data);
+        return S_OK;
+    }
+
+private:
+    void Cache(sResourceData* data) {
+        resource[{data->Type, data->hash}] = data;
+    }
+    template<class ResourceDescription> u64 GenHash(const ResourceDescription* pDesc) { return 0;}
+    template<> u64 GenHash<>(const D3D11_BUFFER_DESC* pDesc) {
+        size_t hash = 0;
+        hash ^= static_cast<size_t>(pDesc->BindFlags) * 73856093;
+        hash ^= static_cast<size_t>(pDesc->CPUAccessFlags) * 19349663;
+        hash ^= static_cast<size_t>(pDesc->Usage) * 83492791;
+        hash ^= static_cast<size_t>(pDesc->ByteWidth) * 2654435761;
+        hash ^= static_cast<size_t>(pDesc->MiscFlags) * 486187739;
+        hash ^= static_cast<size_t>(pDesc->StructureByteStride) * 15485863;
+        return hash;
+    }
+    template<> u64 GenHash<>(const D3D11_TEXTURE2D_DESC* pDesc) {
+        size_t hash = 0;
+        hash ^= std::hash<UINT>()(pDesc->Width) * 73856093;      // Hash the width
+        hash ^= std::hash<UINT>()(pDesc->Height) * 19349663;     // Hash the height
+        hash ^= std::hash<UINT>()(pDesc->MipLevels) * 83492791;  // Hash the mip levels
+        hash ^= std::hash<UINT>()(pDesc->ArraySize) * 2654435761; // Hash the array size
+        hash ^= std::hash<DXGI_FORMAT>()(pDesc->Format) * 486187739;  // Hash the format
+        hash ^= std::hash<D3D11_USAGE>()(pDesc->Usage) * 15485863;  // Hash the usage
+        hash ^= std::hash<UINT>()(pDesc->BindFlags) * 4782969;   // Hash the bind flags
+        hash ^= std::hash<UINT>()(pDesc->CPUAccessFlags) * 3254069;  // Hash the CPU access flags
+        hash ^= std::hash<UINT>()(pDesc->MiscFlags) * 1953095;   // Hash the misc flags
+        return hash;
+    }
+    //void Create(sResourceData& data) {
+    //    switch (data.Type) {
+    //    case RT_Texture:
+    //        switch (data.uSize) {
+    //            case sizeof(D3D11_TEXTURE2D_DESC) :
+    //                device->GetDevice()->CreateTexture2D(&data.Resource.Text2D, (D3D11_SUBRESOURCE_DATA*)data.inMemory, (ID3D11Texture2D**)&data.outMemory);
+
+    //        }
+    //    }
+    //}
+    ActiveResources resource;
+};
+grcResourceCache* grcResourceCache::sm_Instance = nullptr;
+class CTestEntity {
+public:
+    CTestEntity() {
+        this->drawshit.inputElements.push_back({ "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 });
+        this->drawshit.inputElements.push_back({ "NOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 });
+        this->drawshit.inputElements.push_back({ "TEX", 0, DXGI_FORMAT_R32G32_FLOAT,    0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 });
+        this->drawshit.inputElements.push_back({ "COL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }); // should probably check that shit out.
+    }
+    sEntityDrawShit drawshit;
+    void SetupDraw(lage::DGContext* context) {
+        context->IASetIndexBuffer(drawshit.indexBuffer->GetBuffer(), DXGI_FORMAT_R32_UINT, 0);
+        drawshit.vertexBuffer->BindVertexInformation(context);
+    }
+};
+/*
+* Purpose:
+    This class functions more as a binding library between DirectXMath and my own stuff. 
+*/
+class Vector3 {
+private:
+    dxm::XMVECTOR m_Vector = { 0,0,0,1.0f };
+public:
+    Vector3(dxm::XMVECTOR vector) {
+        this->m_Vector = vector;
+    }
+    Vector3(float x, float y, float z) {
+        this->m_Vector = dxm::XMVectorSet(x, y, z, 1.0f);
+    }
+    Vector3 operator-(const Vector3& x) {
+        return dxm::XMVectorSubtract(this->m_Vector, x.m_Vector);
+    }
+    Vector3 operator+(const Vector3& x) {
+        return dxm::XMVectorAdd(this->m_Vector, x.m_Vector);
+    }
+    Vector3 operator*(const Vector3& x) {
+        return dxm::XMVectorMultiply(this->m_Vector, x.m_Vector);
+    }
+    Vector3 operator/(const Vector3& x) {
+        return dxm::XMVectorDivide(this->m_Vector, x.m_Vector);
+    }
+    float GetX() { return dxm::XMVectorGetX(this->m_Vector); }
+    float GetY() { return dxm::XMVectorGetY(this->m_Vector); }
+    float GetZ() { return dxm::XMVectorGetZ(this->m_Vector); }
+    float GetW() { return dxm::XMVectorGetW(this->m_Vector); }
+    dxm::XMVECTOR GetRaw() const { return this->m_Vector; }
+    void SetX(float x) { this->m_Vector = dxm::XMVectorSetX(this->m_Vector, x); }
+    void SetY(float x) { this->m_Vector = dxm::XMVectorSetY(this->m_Vector, x); }
+    void SetZ(float x) { this->m_Vector = dxm::XMVectorSetZ(this->m_Vector, x); }
+    void SetW(float x) { this->m_Vector = dxm::XMVectorSetW(this->m_Vector, x); }
+    bool IsGreaterThan(const Vector3& x) { return dxm::XMVector3Greater(this->m_Vector, x.m_Vector); }
+    bool IsGreaterThanOrEqualTo(const Vector3& x){ return dxm::XMVector3GreaterOrEqual(this->m_Vector, x.m_Vector); }
+    bool IsLessThan(const Vector3& x) { return dxm::XMVector3Less(this->m_Vector, x.m_Vector); }
+    bool IsLessThanOrEqualTo(const Vector3& x) { return dxm::XMVector3LessOrEqual(this->m_Vector, x.m_Vector); }
+    Vector3 Cross(const Vector3& x) { return dxm::XMVector3Cross(this->m_Vector, x.m_Vector); }
+    Vector3 Dot(const Vector3& x) { return dxm::XMVector3Dot(this->m_Vector, x.m_Vector); }
+    Vector3 Scale(float scale) { return dxm::XMVectorScale(this->m_Vector, scale); }
+    Vector3 Normalize() { return dxm::XMVector3Normalize(this->m_Vector); }
+};
+class CCamera {
+public:
+    CCamera(dxm::XMVECTOR position) {
+        this->CameraPosition = position;
+    }
+    dxm::XMMATRIX GetMatrix() { return this->ViewMatrix; }
+    Vector3 GetPosition() { return this->CameraPosition; }
+    //dxm::XMVECTOR GetDirection() { return this->cameraDirection; }
+    void Update() {
+        this->ViewMatrix = DirectX::XMMatrixLookAtLH(CameraPosition.GetRaw(), (CameraPosition + CameraFront).GetRaw(), {0.0,1.0,0.0});
+        const float cameraSpeed = 0.005f;
+        if (GetAsyncKeyState('W') & 0x8000) {
+            CameraPosition = CameraPosition + (CameraFront.Scale(cameraSpeed)).GetRaw();
+        }
+        if (GetAsyncKeyState('S') & 0x8000) {
+            CameraPosition = CameraPosition - (CameraFront.Scale(cameraSpeed)).GetRaw();
+        }
+        if (GetAsyncKeyState('A') & 0x8000) {
+            CameraPosition = CameraPosition + (CameraFront.Cross({ 0.0,1.0,0.0 }).Normalize().Scale(cameraSpeed));
+        }
+        if (GetAsyncKeyState('D') & 0x8000) {
+            CameraPosition = CameraPosition - (CameraFront.Cross({ 0.0,1.0,0.0 }).Normalize().Scale(cameraSpeed));
+        }
+        ImGui::Begin("Camera Rotation");
+        //yaw = wrap_angle(yaw + mouse.GetMouseX() * 0.005f); // 0.005f sensativity. change
+        //pitch = std::clamp(pitch + mouse.GetMouseY() * 0.005f, -PI / 2.0f, PI / 2.0f); // 0.005f sensativity. change
+        //ImGui::Text("Delta : (%f, %f)", mouse.GetMouseX(), mouse.GetMouseY());
+        //ImGui::Text("X(Yaw): %f; Y(Pitch): %f", yaw, pitch);
+        ImGui::SliderFloat("Yaw", &yaw, -360, 360);
+        ImGui::SliderFloat("Pitch", &pitch, -360, 360);
+
+        ImGui::End();
+
+        if (pitch > 89.f) {
+            pitch = 89.f;
+        }
+        if (pitch < -89.f) {
+            pitch = -89.0f;
+        }
+        DirectX::XMVECTOR tempFront;
+        tempFront.m128_f32[0] = cos(DirectX::XMConvertToRadians(yaw)) * cos(DirectX::XMConvertToRadians(pitch));//x
+        tempFront.m128_f32[1] = sin(DirectX::XMConvertToRadians(pitch));//y
+        tempFront.m128_f32[2] = sin(DirectX::XMConvertToRadians(yaw)) * cos(DirectX::XMConvertToRadians(pitch));//z
+        CameraFront = DirectX::XMVector3Normalize(tempFront);
+    }
+
+private:
+    Vector3 CameraPosition = { 0.f,0.f,3.0f };
+    Vector3 CameraFront = { 0.0,0.0,-1.0f };
+    DirectX::XMMATRIX ViewMatrix;
+    float fov = 45.f;
+    float min, max;
+    float yaw = -00, pitch =0 ;
+
+    /*
+        DirectX::XMVECTOR cameraPosition = { 0.f,0.f,3.0f };
+        DirectX::XMVECTOR cameraTarget = { 0.0f,0.0f,4.0f };
+        DirectX::XMVECTOR cameraFront = { 0.0,0.0,-1.0f };
+        DirectX::XMVECTOR cameraDirection = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(cameraPosition, cameraTarget));
+        DirectX::XMVECTOR UP = { 0.0,1.0,0.0 };
+        DirectX::XMVECTOR cameraRight = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(UP, cameraDirection));
+        DirectX::XMVECTOR cameraUp = { 0.0,1.0,0.0 };
+        float yaw = -90.f;
+        float pitch = 0.0f;
+        float lastX = 800.f / 2.0f;
+        float lastY = 600.f / 2.0f;
+        float fov = 45.0f; // oh for fuck sake.
+    */
+};
+class CScene {
+public:
+    void Update() {
+        m_pCamera->Update();
+    }
+    std::vector<CTestEntity*> m_vpEntities;
+    CCamera* m_pCamera;
+};
+class CSceneDraw {
+public:
+    CSceneDraw(CScene* scene);
+    void Draw();
+private:
+    CScene* m_pScene;
+};
+
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
     int cmdcount = 0;    LPWSTR* cmdArgs = CommandLineToArgvW(pCmdLine, &cmdcount);
     const wchar_t CLASSNAME[] = L"Sample Window Class";
@@ -397,7 +705,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     device.GetDevice()->CreateTexture2D(&depthbufferdesc, nullptr, &depthBuffer);
     ID3D11DepthStencilView* depthbufferDSV;
     device.GetDevice()->CreateDepthStencilView(depthBuffer, nullptr, &depthbufferDSV);
-
     //Vertex shader
     ID3DBlob* vertexshaderCSO = NULL;
     //COMPILE VERTEX SHADER
@@ -409,7 +716,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,                            0, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // float3 position
         { "NOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // float3 normal
         { "TEX", 0, DXGI_FORMAT_R32G32_FLOAT,    0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // float2 texcoord
-        { "COL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // float3 color
+        { "COL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }, // float3 color im gonna default tne alignment
     };
     ID3D11InputLayout* inputLayout = NULL;
     hr = device.GetDevice()->CreateInputLayout(inputElementDesc, ARRAYSIZE(inputElementDesc), vertexshaderCSO->GetBufferPointer(), vertexshaderCSO->GetBufferSize(), &inputLayout);
@@ -447,8 +754,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     constantBufferDesc.Usage = D3D11_USAGE_DYNAMIC;
     constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     constantBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    ID3D11Buffer* constantBuffer;
-    device.GetDevice()->CreateBuffer(&constantBufferDesc, nullptr, &constantBuffer);
+    grcBuffer constants = grcBuffer(&constantBufferDesc, nullptr, &device);
     //Texture.
     D3D11_TEXTURE2D_DESC textureDesc = {};
     textureDesc.Width = TEXTURE_WIDTH;
@@ -520,6 +826,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     //    index += 3;
     //    vertices.push_back(vertex);
     //}
+    CCamera camera = CCamera({0,0,0,0});
     Physical object1 = Physical(vertices, { modeltranslation, modelrotation, modelscale });
     modeltranslation = { -3.0,0,0 };
     Physical object2 = Physical(vertices, { modeltranslation, modelrotation, modelscale });
@@ -537,6 +844,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     tData.textureWidth = TEXTURE_WIDTH;
     object2.SetTexture(device.GetDevice(), tData);
     std::vector<int> indices = { std::begin(indexdata), std::end(indexdata) };
+    object2.SetMesh(device.GetDevice(), vertices, indices);
     object1.SetMesh(device.GetDevice(), vertices, indices);
 
     /*Physical object3 = Physical(, {modeltranslation, modelrotation, modelscale});*/
@@ -589,6 +897,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     auto ret = CreateD3DBuffer(device.GetDevice(), vertexdata, sizeof(vertexdata) / sizeof(vertexdata[0]), indexdata, sizeof(indexdata) / sizeof(indexdata[0]));
     object1.ObjectMesh.gpuVertexBuffer = ret.first;
     object1.ObjectMesh.gpuIndexBuffer= ret.second;
+    object2.ObjectMesh.gpuVertexBuffer = ret.first;
+    object2.ObjectMesh.gpuIndexBuffer = ret.second;
     // are buffers being setup properly? because the gpu doesn't get data if so?
     std::vector<Physical*> Objects;
     Objects.push_back(&object1);
@@ -630,22 +940,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     MSG msg = {};
     bool should_close = false;
     float fText = 0.0f;
+    grcResourceCache::InitClass(&device);
+    
 
 
-    DirectX::XMVECTOR cameraPosition = { 0.f,0.f,3.0f };
-    DirectX::XMVECTOR cameraTarget = { 0.0f,0.0f,4.0f };
-    DirectX::XMVECTOR cameraFront = { 0.0,0.0,-1.0f };
-    DirectX::XMVECTOR cameraDirection = DirectX::XMVector3Normalize(DirectX::XMVectorSubtract(cameraPosition, cameraTarget));
-    DirectX::XMVECTOR UP = { 0.0,1.0,0.0 };
-    DirectX::XMVECTOR cameraRight = DirectX::XMVector3Normalize(DirectX::XMVector3Cross(UP, cameraDirection));
-    DirectX::XMVECTOR cameraUp = { 0.0,1.0,0.0 };
-    float yaw = -90.f;
-    float pitch = 0.0f;
-    float lastX = 800.f / 2.0f;
-    float lastY = 600.f / 2.0f;
-    float fov = 45.0f;
-    DirectX::XMMATRIX VIEW;
-    VIEW = DirectX::XMMatrixLookAtLH(cameraPosition, DirectX::XMVectorAdd(cameraPosition, cameraFront), cameraUp);
     const float radius = 10.0f;
     ID3D11Texture2D*     anotherrendertarget;
     D3D11_TEXTURE2D_DESC testDesc = {};
@@ -657,7 +955,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     testDesc.SampleDesc.Count = 1;
     testDesc.Usage = D3D11_USAGE_DEFAULT;
     testDesc.BindFlags = D3D11_BIND_RENDER_TARGET;
-    device.GetDevice()->CreateTexture2D(&testDesc, nullptr, &anotherrendertarget);
+    grcResourceCache::GetInstance().CreateTexture2D(&testDesc, nullptr, &anotherrendertarget);
     D3D11_RENDER_TARGET_VIEW_DESC desc234{};
     desc234.Format = DXGI_FORMAT_R32_FLOAT;
     desc234.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
@@ -665,6 +963,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     device.GetDevice()->CreateRenderTargetView(anotherrendertarget, &desc234, &anotherrendertargetview);
 
     while (!should_close) {
+        grcResourceCache::GetInstance().CreateTexture2D(&testDesc, nullptr, &anotherrendertarget);
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
@@ -716,46 +1015,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             //    ImGui::End();
             //}
 
-            VIEW = DirectX::XMMatrixLookAtLH(cameraPosition, DirectX::XMVectorAdd(cameraPosition, cameraFront), cameraUp);
+            camera.Update();
         }
         {
             //mouse.ShowRawInputWindow();
         }
         { // basic input methods. Broken currently.
-            const float cameraSpeed = 0.005f;
-            if (GetAsyncKeyState('W') & 0x8000) {
-                cameraPosition = DirectX::XMVectorAdd(cameraPosition, DirectX::XMVectorScale(cameraFront, cameraSpeed));
-            }
-            if (GetAsyncKeyState('S') & 0x8000) {
-                cameraPosition = DirectX::XMVectorSubtract(cameraPosition, DirectX::XMVectorScale(cameraFront, cameraSpeed));
-            }
-            if (GetAsyncKeyState('A') & 0x8000) {
-                cameraPosition = DirectX::XMVectorAdd(cameraPosition, DirectX::XMVectorScale(DirectX::XMVector3Normalize(DirectX::XMVector3Cross(cameraFront, cameraUp)), cameraSpeed));
-            }
-            if (GetAsyncKeyState('D') & 0x8000) {
-                cameraPosition = DirectX::XMVectorSubtract(cameraPosition, DirectX::XMVectorScale(DirectX::XMVector3Normalize(DirectX::XMVector3Cross(cameraFront, cameraUp)), cameraSpeed));
-            }
-            ImGui::Begin("Camera Rotation");
-                //yaw = wrap_angle(yaw + mouse.GetMouseX() * 0.005f); // 0.005f sensativity. change
-                //pitch = std::clamp(pitch + mouse.GetMouseY() * 0.005f, -PI / 2.0f, PI / 2.0f); // 0.005f sensativity. change
-                //ImGui::Text("Delta : (%f, %f)", mouse.GetMouseX(), mouse.GetMouseY());
-                //ImGui::Text("X(Yaw): %f; Y(Pitch): %f", yaw, pitch);
-            ImGui::SliderFloat("Yaw", &yaw, -360, 360);
-            ImGui::SliderFloat("Pitch", &pitch, -360, 360);
 
-            ImGui::End();
-
-            if (pitch > 89.f) {
-                pitch = 89.f;
-            }
-            if (pitch < -89.f) {
-                pitch = -89.0f;
-            }
-            DirectX::XMVECTOR tempFront;
-            tempFront.m128_f32[0] = cos(DirectX::XMConvertToRadians(yaw)) * cos(DirectX::XMConvertToRadians(pitch));//x
-            tempFront.m128_f32[1] = sin(DirectX::XMConvertToRadians(pitch));//y
-            tempFront.m128_f32[2] = sin(DirectX::XMConvertToRadians(yaw)) * cos(DirectX::XMConvertToRadians(pitch));//z
-            cameraFront = DirectX::XMVector3Normalize(tempFront);
         }
 
         device.GetContext()->ClearRenderTargetView(device.GetRenderTarget(), clearColor);
@@ -769,7 +1035,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             device.GetContext()->IASetIndexBuffer(obj->ObjectMesh.gpuIndexBuffer, DXGI_FORMAT_R32_UINT, 0);
 
             device.GetContext()->VSSetShader(vertexShader, nullptr, 0);
-            device.GetContext()->VSSetConstantBuffers(0, 1, &constantBuffer);
+            device.GetContext()->VSSetConstantBuffers(0, 1, constants.GetBufferPtr()); // since its supposed to be a collection it needs this I think :0
 
             device.GetContext()->RSSetViewports(1, &viewport);
             device.GetContext()->RSSetState(rasterizerState);
@@ -783,17 +1049,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             device.GetContext()->OMSetBlendState(nullptr, nullptr, 0xffffffff);
 
             D3D11_MAPPED_SUBRESOURCE constantBufferMSR;
-            device.GetContext()->Map(constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &constantBufferMSR);
+            device.GetContext()->Map(constants.GetBuffer(), 0, D3D11_MAP_WRITE_DISCARD, 0, &constantBufferMSR);
             {
                 Constants* constants = (Constants*)constantBufferMSR.pData;
                 
                 constants->transform = obj->transform.GetMat4();
                 constants->projection = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(45.0f), viewport.Width / viewport.Height, 0.1, 100.f);
 
-                constants->view = VIEW;
+                constants->view = camera.GetMatrix();
                 constants->lightvector = { 1.0f, -1.0f, 1.0f };
             }
-            device.GetContext()->Unmap(constantBuffer, 0);
+            device.GetContext()->Unmap(constants.GetBuffer(), 0);
 
             device.GetContext()->DrawIndexed(obj->ObjectMesh.IndexBuffer.size(), 0, 0);
 
