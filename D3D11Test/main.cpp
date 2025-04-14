@@ -271,44 +271,6 @@ public:
 private:
 
 };
-enum eShaderType {
-    VERTEX,
-    PIXEL,
-    MAX_SHADER_TYPES
-};
-
-class fwShader {
-public:
-    fwShader();
-    eShaderType GetShaderType() { return this->m_iShaderType; }
-    virtual void Bind() = 0; // 
-protected:
-    eShaderType m_iShaderType;
-};
-class fwVertexShader : public fwShader{
-public:
-    fwVertexShader(ID3D11VertexShader* shader) {
-        this->m_ShaderInstance = shader;
-        this->m_iShaderType = VERTEX;
-    }
-    void Bind() {
-        GRCDEVICE->GetContext()->VSSetShader(this->m_ShaderInstance, nullptr, 0);
-    }
-private:
-    ID3D11VertexShader* m_ShaderInstance;
-};
-class fwPixelShader : public fwShader {
-public:
-    fwPixelShader(ID3D11PixelShader* shader) {
-        this->m_ShaderInstance = shader;
-        this->m_iShaderType = PIXEL;
-    }
-    void Bind() {
-        GRCDEVICE->GetContext()->PSSetShader(this->m_ShaderInstance, nullptr, 0);
-    }
-private:
-    ID3D11PixelShader* m_ShaderInstance;
-};
 template<typename T> class SingletonDef : protected T {
 private:
     static T* sm_pInstance;
@@ -327,26 +289,6 @@ public:
     Vertex Info ( I think idk );
 
 */
-class grcBuffer {
-private:
-    ID3D11Buffer* m_pBuffer = nullptr;
-public:
-    grcBuffer(D3D11_BUFFER_DESC* descriptor, D3D11_SUBRESOURCE_DATA* data, lage::GDevice* dev) {
-        dev->GetDevice()->CreateBuffer(descriptor, data, &this->m_pBuffer); // we should do some more advanced management here but this is just to get the ball rolling.
-    }
-    ID3D11Buffer* GetBuffer() { return this->m_pBuffer; }
-    ID3D11Buffer** GetBufferPtr() { return &this->m_pBuffer; }
-    void SetBuffer(ID3D11Buffer* bufferptr) { this->m_pBuffer = bufferptr; }
-     
-};
-class grcPass {
-public:
-    void SetShader(fwShader* shader) {
-        m_Shaders[shader->GetShaderType()] = shader;
-    }
-private:
-    fwShader* m_Shaders[MAX_SHADER_TYPES];
-};
 
 template<typename T>
 T wrap_angle(T theta) noexcept {
@@ -397,25 +339,6 @@ double GetGlfwTimer() {
     using SecondsFP = std::chrono::duration<double>;
     return duration_cast<SecondsFP>(high_resolution_clock::now().time_since_epoch()).count();
 }
-
-class grcVertexBuffer : public grcBuffer{
-public:
-    grcVertexBuffer(D3D11_BUFFER_DESC* descriptor, D3D11_SUBRESOURCE_DATA* data, UINT stride, UINT offset, GDevice* dev) : grcBuffer(descriptor, data, dev){
-        this->stride = stride;
-        this->offset = offset;
-    }
-    void BindVertexInformation(DGContext* context) {
-        context->IASetVertexBuffers(0, 1, this->GetBufferPtr(), &stride, &offset);
-    }
-private:
-    UINT stride, offset;
-};
-struct sEntityDrawShit {
-public:
-    std::vector<D3D11_INPUT_ELEMENT_DESC> inputElements;
-    grcVertexBuffer* vertexBuffer;
-    grcBuffer* indexBuffer;
-};
 /*
     Ok it seems like they don't cache? They just have a void* to ResourceData map?
     So like no idea wtf is going on?
@@ -488,7 +411,7 @@ public:
         data->hash = hash;
         data->Type = RT_Texture;
         device->GetDevice()->CreateTexture2D(pDesc, pInitialData, (ID3D11Texture2D**) &data->outMemory);
-        data->uSize = sizeof pDesc;
+        data->uSize = sizeof *pDesc;
         data->Resource.Text2D = *pDesc; // uhh shitfuck?
         *ppTexture = (ID3D11Texture2D*)data->outMemory;
         Cache(data);
@@ -529,27 +452,12 @@ private:
     //        switch (data.uSize) {
     //            case sizeof(D3D11_TEXTURE2D_DESC) :
     //                device->GetDevice()->CreateTexture2D(&data.Resource.Text2D, (D3D11_SUBRESOURCE_DATA*)data.inMemory, (ID3D11Texture2D**)&data.outMemory);
-
     //        }
     //    }
     //}
     ActiveResources resource;
 };
 grcResourceCache* grcResourceCache::sm_Instance = nullptr;
-class CTestEntity {
-public:
-    CTestEntity() {
-        this->drawshit.inputElements.push_back({ "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 });
-        this->drawshit.inputElements.push_back({ "NOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 });
-        this->drawshit.inputElements.push_back({ "TEX", 0, DXGI_FORMAT_R32G32_FLOAT,    0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 });
-        this->drawshit.inputElements.push_back({ "COL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 }); // should probably check that shit out.
-    }
-    sEntityDrawShit drawshit;
-    void SetupDraw(lage::DGContext* context) {
-        context->IASetIndexBuffer(drawshit.indexBuffer->GetBuffer(), DXGI_FORMAT_R32_UINT, 0);
-        drawshit.vertexBuffer->BindVertexInformation(context);
-    }
-};
 /*
 * Purpose:
     This class functions more as a binding library between DirectXMath and my own stuff. 
@@ -663,22 +571,211 @@ private:
         float fov = 45.0f; // oh for fuck sake.
     */
 };
-class CScene {
+template<typename T>
+class grcVertexBuffer {
 public:
-    void Update() {
-        m_pCamera->Update();
+    grcVertexBuffer(GDevice& device) {
+        this->device = device;
     }
-    std::vector<CTestEntity*> m_vpEntities;
-    CCamera* m_pCamera;
-};
-class CSceneDraw {
-public:
-    CSceneDraw(CScene* scene);
-    void Draw();
+    void Init(const std::vector<T>& data) {
+        stride = sizeof T;
+        count = data.size();
+        D3D11_BUFFER_DESC desc = {};
+        desc.Usage = D3D11_USAGE_IMMUTABLE;
+        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        desc.ByteWidth = stride * count;
+        D3D11_SUBRESOURCE_DATA initData = {};
+        initData.pSysMem = data.data();
+        device.GetDevice()->CreateBuffer(&desc, &initData, &this->m_pGPUBuffer);
+    }
+    void Bind() {
+        UINT offset = 0;
+        device.GetContext()->IASetVertexBuffers(0,1,this->m_pGPUBuffer, &stride, &offset);
+    }
+
 private:
-    CScene* m_pScene;
+    GDevice& device;
+    ID3D11Buffer* m_pGPUBuffer;
+    UINT stride;
+    UINT count;
+};
+class grcIndexBuffer {
+public:
+    grcIndexBuffer(GDevice& device) {
+        this->device = device;
+    }
+    void Init(const std::vector<uint32_t>& data) {
+        stride = sizeof uint32_t;
+        count = data.size();
+        D3D11_BUFFER_DESC desc = {};
+        desc.Usage = D3D11_USAGE_IMMUTABLE;
+        desc.BindFlags = D3D11_BIND_INDEX_BUFFER; 
+        desc.ByteWidth = stride * count;
+        D3D11_SUBRESOURCE_DATA initData = {};
+        initData.pSysMem = data.data();
+        device.GetDevice()->CreateBuffer(&desc, &initData, &this->m_pGPUBuffer);
+    }
+    void Bind() {
+        UINT offset = 0;
+        device.GetContext()->IASetVertexBuffers(0, 1, this->m_pGPUBuffer, &stride, &offset);
+    }
+
+private:
+    GDevice& device;
+    ID3D11Buffer* m_pGPUBuffer;
+    UINT stride;
+    UINT count;
+};
+class Geometry {
+public:
+    void ShootMe(std::vector<Vertex>& crossbowmynuts, std::vector<uint32_t> indices) {
+        this->m_pVertexBuffer->Init(crossbowmynuts);
+        this->m_pIndexBuffer->Init(indices);
+    }
+private:
+    grcVertexBuffer<Vertex>* m_pVertexBuffer; // @TODO: diff the memory pattern from the memory itself :)
+    grcIndexBuffer* m_pIndexBuffer;
+};
+class fwMesh {
+public:
+    void Bind() {
+        
+    }
+private:
+    Geometry* m_pGeo;
+    int numGeo;
+};
+class fwShader {
+public:
+    enum eShaderType {
+        Vertex,
+        Pixel
+    };
+    virtual void Bind() = 0;
+    eShaderType GetShaderType() { return this->ShaderType; }
+protected:
+    fwShader(eShaderType type) {
+        this->ShaderType = type;
+    }
+    eShaderType ShaderType;
+};
+class grcVertexShader : public fwShader{ // listen I've been just going back and forth I've decided just to write. And suffer if I can't make it. you gotta do it regardless. Just bite the bullet. 
+public:
+    grcVertexShader() : fwShader(Vertex){}
+    void Bind() { 
+    
+    } // take a render context or get one from global scope you idiot.
+private:
+    ID3D11VertexShader* m_pRawShader;
+};
+class fwShaderGroup {
+public:
+    fwShaderGroup() {}
+    void SetShader(fwShader* pShader) {
+        switch (pShader->GetShaderType()) {
+        case fwShader::Vertex:
+            this->m_pVertexShader = pShader;
+            break;
+        case fwShader::Pixel:
+            this->m_pPixelShader = pShader;
+            break;
+        }
+    }
+    fwShader* GetVertexShader() { return this->m_pVertexShader; }
+    fwShader* GetPixelShader() { return this->m_pPixelShader; }
+private:
+    fwShader* m_pVertexShader = nullptr;
+    fwShader* m_pPixelShader = nullptr;
+};
+class grcDrawable {
+public:
+    grcDrawable(fwMesh* msh, fwShaderGroup* pShader) {
+        this->m_pMesh = msh;
+        this->m_pShaders = pShader; // fuckshit
+    } 
+    void SetShader(fwShaderGroup* pShader) {
+        this->m_pShaders = pShader; // i don't care if pShader is null :)
+    }
+    void SetupDraw() {
+        
+    }
+private:
+    fwRenderContext* m_pRenderContext;
+    fwMesh* m_pMesh;
+    fwShaderGroup* m_pShaders;
 };
 
+class fwRenderContext {
+public:
+    enum eFormat { // @TODO Add more data types as necessary. It's gonna be a pain at first cause its basically data transfusion. Maybe do a bit of automation?  
+        FMT_R32_UINT,
+    };
+    virtual void SetInputAssembly(ID3D11InputLayout* pLayout) = 0; // @TODO Remove ID3D11InputLayout base implementation. 
+    virtual void SetVertexBuffers(unsigned int StartSlot, unsigned int NumBuffers, void** ppVertexBuffers, const unsigned int* pStrides, const unsigned int* pOffsets) = 0;
+    virtual void SetIndexBuffer(void* pIndexBuffer, eFormat Format, unsigned int offset) = 0; // abstraction yay!
+    virtual void DrawIndexed(unsigned int indexcount, unsigned int startindexloc, int basevertexlocation) = 0;
+};
+template<typename ConversionType>
+class fwFormatMappings {
+public:
+    virtual ConversionType TranslateFormat(fwRenderContext::eFormat format) = 0;
+protected:
+    std::map<fwRenderContext::eFormat, ConversionType> m_FormatMap;
+};
+class grcD3D11FormatMappings : public fwFormatMappings<DXGI_FORMAT> { 
+public:
+    void Init() {
+        this->m_FormatMap.insert({ fwRenderContext::eFormat::FMT_R32_UINT, DXGI_FORMAT::DXGI_FORMAT_R32_UINT }); // this is a bunch of shit. regardless of your opinion :L.
+    }
+    DXGI_FORMAT TranslateFormat(fwRenderContext::eFormat format) {
+        return this->m_FormatMap.at(format);
+    }
+    static grcD3D11FormatMappings& GetInstance() {
+        assert(sm_pFormatMapperDXGI != nullptr);
+        return *sm_pFormatMapperDXGI;
+    }
+private:
+    grcD3D11FormatMappings() {
+        this->Init();
+    }
+    static grcD3D11FormatMappings* sm_pFormatMapperDXGI;
+};
+grcD3D11FormatMappings* grcD3D11FormatMappings::sm_pFormatMapperDXGI = new grcD3D11FormatMappings();
+class grcD3D11RenderContext : public fwRenderContext{
+public:
+    grcD3D11RenderContext() {}
+    void SetInputAssembly(ID3D11InputLayout* pLayout) {
+        this->GetBasisContext()->IASetInputLayout(pLayout);
+    }  
+    void SetVertexBuffers(unsigned int StartSlot, unsigned int NumBuffers, void* const * ppVertexBuffers, const unsigned int* pStrides, const unsigned int* pOffsets) {
+        this->GetBasisContext()->IASetVertexBuffers(StartSlot, NumBuffers, (ID3D11Buffer* const *)ppVertexBuffers, pStrides, pOffsets); // nice beautiful dirty cast in the middle of the argument :|
+    }
+    void SetIndexBuffer(void* pIndexBuffer, eFormat Format, unsigned int offset) {
+        this->GetBasisContext()->IASetIndexBuffer((ID3D11Buffer*)pIndexBuffer, grcD3D11FormatMappings::GetInstance().TranslateFormat(Format), offset);
+    } 
+    void DrawIndexed(unsigned int indexcount, unsigned int startindexloc, int basevertexlocation) override {
+        this->GetBasisContext()->DrawIndexed(indexcount, startindexloc, basevertexlocation);
+    }
+    ID3D11DeviceContext* GetBasisContext() { return this->m_pDeviceContext; }
+private:
+    ID3D11DeviceContext* m_pDeviceContext;
+};
+
+class grcPass {
+public:
+    grcPass(std::vector<grcDrawable*>& ppDrawables) {
+        this->m_ppDrawables = ppDrawables;
+    }
+    void Render() {
+        for (auto* draw : m_ppDrawables) {
+            draw->SetupDraw();
+            m_pRenderContext->DrawIndexed();
+        }
+    }
+private:
+    fwRenderContext* m_pRenderContext;
+    std::vector<grcDrawable*> m_ppDrawables;
+};
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
     int cmdcount = 0;    LPWSTR* cmdArgs = CommandLineToArgvW(pCmdLine, &cmdcount);
     const wchar_t CLASSNAME[] = L"Sample Window Class";
