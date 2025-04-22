@@ -1,0 +1,3 @@
+﻿  device.cpp
+W:\Engine\LAG\lagGraphics\renderer\device.cpp(13): warning C4715: 'GetExcept': not all control paths return a value
+  lagGraphics.vcxproj -> W:\Engine\LAG\x64\Debug\LAGGraphics.lib

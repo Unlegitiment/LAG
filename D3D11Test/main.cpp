@@ -580,7 +580,7 @@ public:
 
 private:
     GDevice& device;
-    ID3D11Buffer* m_pGPUBuffer;
+    ID3D11Buffer* m_pGPUBuffer; // so we never abstracted this stuff in later renditions. ideally we'll do that. LAG 1 is just baseline D3D11 Support.  
     UINT stride;
     UINT count;
 };
@@ -602,7 +602,7 @@ public:
     }
     void Bind() {
         UINT offset = 0;
-        device.GetContext()->IASetVertexBuffers(0, 1, this->m_pGPUBuffer, &stride, &offset);
+        device.GetContext()->IASetVertexBuffers(0, 1, &this->m_pGPUBuffer, &stride, &offset);
     }
 
 private:
@@ -627,7 +627,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     ShowWindow(hwnd, nCmdShow);
     GDevice device = GDevice();
     device.Init(hwnd);
-    
     HRESULT hr;
     //Depth Buffer
     D3D11_TEXTURE2D_DESC depthbufferdesc;
@@ -687,7 +686,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     constantBufferDesc.Usage = D3D11_USAGE_DYNAMIC;
     constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     constantBufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    grcBuffer constants = grcBuffer(&constantBufferDesc, nullptr, &device);
+    grcBuffer constants = grcBuffer(&constantBufferDesc, nullptr, &device); // @TODO: Fix/Add GrcBuffer back into class structure. 
     //Texture.
     D3D11_TEXTURE2D_DESC textureDesc = {};
     textureDesc.Width = TEXTURE_WIDTH;
@@ -896,7 +895,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     device.GetDevice()->CreateRenderTargetView(anotherrendertarget, &desc234, &anotherrendertargetview);
 
     while (!should_close) {
-        grcResourceCache::GetInstance().CreateTexture2D(&testDesc, nullptr, &anotherrendertarget);
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
@@ -961,7 +959,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         device.GetContext()->ClearDepthStencilView(depthbufferDSV, D3D11_CLEAR_DEPTH, 1.0f, 0);
         for(auto& obj : Objects)
         { /*** RENDER A FRAME ***/
-
             device.GetContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             device.GetContext()->IASetInputLayout(inputLayout); 
             device.GetContext()->IASetVertexBuffers(0, 1, &obj->ObjectMesh.gpuVertexBuffer, &stride, &offset); //  i need buffers allocated on the gpu? not sure where to do that yet if it happens when we allocate stuff or something else.
@@ -995,15 +992,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
             device.GetContext()->Unmap(constants.GetBuffer(), 0);
 
             device.GetContext()->DrawIndexed(obj->ObjectMesh.IndexBuffer.size(), 0, 0);
-
-
         } // end of frame
         ImGui::Render();
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         device.GetSwapChain()->Present(1, 0);
-
-
-
     } // end of main loop
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();

@@ -24,6 +24,7 @@
     <ProjectGuid>{2c694a8d-d335-4954-a3e7-f4aacf42c555}</ProjectGuid>
     <RootNamespace>lagFramework</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>LAGFramework</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -40,7 +41,7 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
@@ -128,13 +129,20 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="core\exception.h" />
+    <ClInclude Include="core\gameSkeleton.h" />
+    <ClInclude Include="core\Result.h" />
+    <ClInclude Include="math.h" />
+    <ClInclude Include="renderer\device.h" />
     <ClInclude Include="renderer\formats.h" />
     <ClInclude Include="renderer\rendercontext.h" />
+    <ClInclude Include="renderer\resourcedesc.h" />
+    <ClInclude Include="renderer\result.h" />
     <ClInclude Include="renderer\shader.h" />
     <ClInclude Include="renderer\shadergroup.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="core\exception.cpp" />
+    <ClCompile Include="core\gameSkeleton.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

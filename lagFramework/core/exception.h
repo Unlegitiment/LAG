@@ -1,8 +1,7 @@
 #pragma once
 #include<exception>
-namespace std {
-class string;
-}
+#include <string>
+
 class LagException : public std::exception {
 public:
     LagException(const std::string& exeString);

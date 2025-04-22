@@ -1,0 +1,13 @@
+﻿  Graphics.cpp
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(16,40): error C2065: 'window': undeclared identifier
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(25,137): error C2355: 'this': can only be referenced inside non-static member functions or non-static data member initializers
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(25,158): error C2355: 'this': can only be referenced inside non-static member functions or non-static data member initializers
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(25,191): error C2355: 'this': can only be referenced inside non-static member functions or non-static data member initializers
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(25,18): error C2660: 'D3D11CreateDeviceAndSwapChain': function does not take 9 arguments
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.22621.0\um\d3d11.h(15116,16): message : see declaration of 'D3D11CreateDeviceAndSwapChain'
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(25,18): message : while trying to match the argument list '(int, D3D_DRIVER_TYPE, int, UINT, int, int, int, DXGI_SWAP_CHAIN_DESC *, D3D_FEATURE_LEVEL *)'
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(26,5): error C2065: 'm_pSwapChain': undeclared identifier
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(26,5): error C2355: 'this': can only be referenced inside non-static member functions or non-static data member initializers
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(27,5): error C3861: 'SetupFrameBuffer': identifier not found
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(28,5): error C3861: 'SetupRenderTarget': identifier not found
+W:\Engine\LAG\game_lib_1\Graphics\Graphics.cpp(29,79): error C2059: syntax error: ','

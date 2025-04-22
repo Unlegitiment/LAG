@@ -1,6 +1,6 @@
 #pragma once
-#include "../../lagFramework/renderer/formats.h"
-#include "../../lagFramework/renderer/rendercontext.h"
+#include "LAGFramework\renderer\formats.h"
+#include "LAGFramework\renderer\rendercontext.h"
 enum DXGI_FORMAT;
 class grcD3D11FormatMappings : public fwFormatMappings<DXGI_FORMAT> {
 public:
