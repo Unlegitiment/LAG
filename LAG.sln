@@ -1,0 +1,51 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34322.80
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LAG", "LAG\LAG.vcxproj", "{519F29E4-77A1-4153-8517-1ECAA6723F62}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LAGGraphics", "LAGGraphics\LAGGraphics.vcxproj", "{E2F54F62-E02C-48E5-A865-3E76213685FC}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "shaders", "shaders\shaders.vcxproj", "{2EA83F63-50BF-4105-AD4A-298EBCB21781}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{519F29E4-77A1-4153-8517-1ECAA6723F62}.Debug|x64.ActiveCfg = Debug|x64
+		{519F29E4-77A1-4153-8517-1ECAA6723F62}.Debug|x64.Build.0 = Debug|x64
+		{519F29E4-77A1-4153-8517-1ECAA6723F62}.Debug|x86.ActiveCfg = Debug|Win32
+		{519F29E4-77A1-4153-8517-1ECAA6723F62}.Debug|x86.Build.0 = Debug|Win32
+		{519F29E4-77A1-4153-8517-1ECAA6723F62}.Release|x64.ActiveCfg = Release|x64
+		{519F29E4-77A1-4153-8517-1ECAA6723F62}.Release|x64.Build.0 = Release|x64
+		{519F29E4-77A1-4153-8517-1ECAA6723F62}.Release|x86.ActiveCfg = Release|Win32
+		{519F29E4-77A1-4153-8517-1ECAA6723F62}.Release|x86.Build.0 = Release|Win32
+		{E2F54F62-E02C-48E5-A865-3E76213685FC}.Debug|x64.ActiveCfg = Debug|x64
+		{E2F54F62-E02C-48E5-A865-3E76213685FC}.Debug|x64.Build.0 = Debug|x64
+		{E2F54F62-E02C-48E5-A865-3E76213685FC}.Debug|x86.ActiveCfg = Debug|Win32
+		{E2F54F62-E02C-48E5-A865-3E76213685FC}.Debug|x86.Build.0 = Debug|Win32
+		{E2F54F62-E02C-48E5-A865-3E76213685FC}.Release|x64.ActiveCfg = Release|x64
+		{E2F54F62-E02C-48E5-A865-3E76213685FC}.Release|x64.Build.0 = Release|x64
+		{E2F54F62-E02C-48E5-A865-3E76213685FC}.Release|x86.ActiveCfg = Release|Win32
+		{E2F54F62-E02C-48E5-A865-3E76213685FC}.Release|x86.Build.0 = Release|Win32
+		{2EA83F63-50BF-4105-AD4A-298EBCB21781}.Debug|x64.ActiveCfg = Debug|x64
+		{2EA83F63-50BF-4105-AD4A-298EBCB21781}.Debug|x64.Build.0 = Debug|x64
+		{2EA83F63-50BF-4105-AD4A-298EBCB21781}.Debug|x86.ActiveCfg = Debug|Win32
+		{2EA83F63-50BF-4105-AD4A-298EBCB21781}.Debug|x86.Build.0 = Debug|Win32
+		{2EA83F63-50BF-4105-AD4A-298EBCB21781}.Release|x64.ActiveCfg = Release|x64
+		{2EA83F63-50BF-4105-AD4A-298EBCB21781}.Release|x64.Build.0 = Release|x64
+		{2EA83F63-50BF-4105-AD4A-298EBCB21781}.Release|x86.ActiveCfg = Release|Win32
+		{2EA83F63-50BF-4105-AD4A-298EBCB21781}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {E0089124-E190-4F7E-84C4-73E612778B0C}
+	EndGlobalSection
+EndGlobal
