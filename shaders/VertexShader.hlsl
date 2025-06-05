@@ -1,14 +1,25 @@
 struct vs_in{
-    float3 position_local :POS;
+    float3 position_local : POS0;
+    float3 color : COL0;
+    float2 TextCoord : TXTC0;
 };
 struct vs_out {
     float4 positionClip : SV_POSITION;
+    float3 color : COL0;
+    float2 coord : TXTC0;
+};
+Texture2D myTexture : register(t0);
+SamplerState mySampler : register(s0);
+cbuffer TestBuffer : register(b0){
+    float4 ColorTest;
 };
 vs_out vs_main(vs_in input){
     vs_out output = (vs_out)0;
     output.positionClip = float4(input.position_local, 1.0f);
+    output.color = input.color;
+    output.coord = input.TextCoord;
     return output;
 }
 float4 ps_main(vs_out input) : SV_TARGET{
-    return float4(1.0, 0.0, 0.0, 1.0);
+    return myTexture.Sample(mySampler, input.coord);
 }
