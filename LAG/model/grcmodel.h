@@ -6,6 +6,7 @@
 #include <stacktrace>
 #include <string>
 #include <RenderPass\Renderpass.h>
+#include <DirectXMath.h>
 class grcModel {
 public:
 	grcModel() {
@@ -15,24 +16,19 @@ public:
 		//m_pDrawHandler = new CEntityDrawHandler(this);
 		if(buffer) m_pShader->AppendShaderConstantBuffer(0, buffer);
 	}
-	void Draw(float fTime) {
-		static int asd = 0;
-		Test.colorTint[0] = (sin(fTime) + 1.0f) * 0.5f;
-		Test.colorTint[1] = (cos(fTime) + 1.0f) * 0.5f;
-		if (asd >= 6000) {
-			Test.colorTint[2] = 1.0;
-		}
-		else {
-			Test.colorTint[2] = 0.0f;
-		}
-		Test.colorTint[3] = 1.0f;
-
-		buffer->Update(&Test, sizeof(TestBuffer)); // fun
+	
+	void Draw(float x, float y, float z) {
+		Test.transformMatrix = DirectX::XMMatrixTranspose(
+			DirectX::XMMatrixRotationZ(0.0) *
+			DirectX::XMMatrixScaling(3.f / 4.f, 1.0, 1.0) *
+			DirectX::XMMatrixTranslation(x,y,z) *
+			DirectX::XMMatrixPerspectiveLH(1.0f, 3.0f, 0.5, 10.0f)
+		);
+		buffer->Update(&Test, sizeof(Constants)); // fun
 		m_pShader->Bind();
 		m_pIndexBuffer->Bind();
 		m_pVertexBuffer->Bind();
 		grcDeviced3d::Get()->context->DrawIndexed(ARRAYSIZE(mIndex), 0, 0);
-		asd++;
 	}
 	~grcModel() {
 		delete m_pIndexBuffer;
@@ -59,11 +55,11 @@ private:
 			0, 1, 3,   // first triangle
 			1, 2, 3    // second triangle
 	};
-	struct TestBuffer {
-		float colorTint[4]; // just testing.
+	struct Constants {
+		DirectX::XMMATRIX transformMatrix;
 	}Test;
 	//CEntityDrawHandler* m_pDrawHandler;
-	grcCBuffer* buffer = new grcCBuffer(&Test, sizeof(TestBuffer));
+	grcCBuffer* buffer = new grcCBuffer(&Test, sizeof(Constants));
 	grcShaderGroup* m_pShader = nullptr;
 	grcVertexBuffer* m_pVertexBuffer = nullptr;
 	grcIndexBuffer* m_pIndexBuffer = nullptr;

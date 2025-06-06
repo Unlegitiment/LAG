@@ -11,11 +11,11 @@ struct vs_out {
 Texture2D myTexture : register(t0);
 SamplerState mySampler : register(s0);
 cbuffer TestBuffer : register(b0){
-    float4 ColorTest;
+    matrix transform;
 };
 vs_out vs_main(vs_in input){
     vs_out output = (vs_out)0;
-    output.positionClip = float4(input.position_local, 1.0f);
+    output.positionClip = mul(float4(input.position_local.x, input.position_local.y, input.position_local.z, 1.0f), transform);
     output.color = input.color;
     output.coord = input.TextCoord;
     return output;

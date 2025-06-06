@@ -43,7 +43,7 @@ public:
 
 		for (auto& [slot, buf] : m_pBuffers) {
 			grcDeviced3d::Get()->context->VSSetConstantBuffers(slot, 1, buf->GetBuffer()->GetAddrOf());
-			grcDeviced3d::Get()->context->PSSetConstantBuffers(slot, 1, buf->GetBuffer()->GetAddrOf());
+			grcDeviced3d::Get()->context->PSSetConstantBuffers(slot, 1, buf->GetBuffer()->GetAddrOf()); 
 		}
 	}
 	void AppendShaderConstantBuffer(int reg, grcCBuffer* bufferData) {

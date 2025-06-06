@@ -13,6 +13,10 @@
 #include <InputAssembly\InputAssembly.h>
 #include <State\Stateblock.h>
 #include <__msvc_chrono.hpp>
+#include <assimp/Importer.hpp>
+#include <DirectXMath.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include "thirdparty/stb_image.h"
 
 #pragma comment( lib, "user32" )          // link against the win32 library
 #pragma comment( lib, "d3d11.lib" )       // direct3D library
@@ -60,8 +64,7 @@ public:
 private:
 	std::chrono::high_resolution_clock::time_point	m_Last;
 };
-#define STB_IMAGE_IMPLEMENTATION
-#include "thirdparty/stb_image.h"
+
 int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTANCE hPrevInstance, [[maybe_unused]]PWSTR pCmdLine, [[maybe_unused]]int nCmdShow)
 {
 	// Register the window class.
@@ -87,10 +90,28 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 	grcStateBlock::sm_pRect = &winRect;
 	grcStateBlock::Init();
 	CTimer timer;
+	IDXGIFactory* factory = NULL;
+	HRESULT hr = CreateDXGIFactory(__uuidof(IDXGIFactory), (void**)&factory);
+	assert((SUCCEEDED(hr)));
+	UINT i = 0;
+	IDXGIAdapter* pAdapter = nullptr;
+	std::vector<IDXGIAdapter*> adapters;
+	while (factory->EnumAdapters(i, &pAdapter) != DXGI_ERROR_NOT_FOUND) {
+		adapters.push_back(pAdapter);
+		++i; // I really got learn the difference here.
+	}
+	for (auto* adapter : adapters) {
+		DXGI_ADAPTER_DESC desc;
+		adapter->GetDesc(&desc);
+		OutputDebugStringW(desc.Description);
+		OutputDebugStringW(L"\n");
+	}
+
 	ID3D11ShaderResourceView* char_social_club_srv = nullptr;
 	ID3D11Texture2D* Texture;
 	int x = 0, y = 0, comp = 0;
-	stbi_uc* uc = stbi_load("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\char_social_club.jpg", &x, &y, &comp, 4);
+	stbi_uc* uc = stbi_load("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\char_social_club.jpg", &x, &y, &comp, 4); // oopse
+	assert(uc != nullptr && "STBI failed to load image. Check image's path.");
 	D3D11_TEXTURE2D_DESC DESC = {};
 	DESC.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	DESC.Width = x;
@@ -107,7 +128,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 	srvdesc.Format = DESC.Format;
 	srvdesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 	srvdesc.Texture2D.MipLevels = 1;
-	HRESULT hr = device.outDevice->CreateTexture2D(&DESC, &init, &Texture);
+	hr = device.outDevice->CreateTexture2D(&DESC, &init, &Texture);
 	assert(SUCCEEDED(hr) && "Failed to do CreateTexture2D");
 	hr = device.outDevice->CreateShaderResourceView(Texture, &srvdesc, &char_social_club_srv);
 	assert(SUCCEEDED(hr) && "Failed to do CreateShaderResourceView");
@@ -122,19 +143,58 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 	ID3D11SamplerState* samplerState = nullptr;
 	hr = device.outDevice->CreateSamplerState(&sampDesc, &samplerState);
 	assert(SUCCEEDED(hr) && "Failed to do CreateSamplerState");
+	stbi_image_free(uc);
+	//This is all DEPTH STENCIL stuff until OmSetRenderTargets. Learn how to actually abstract and where to abstract it since you've been avoiding RenderPasses lmao
+	D3D11_DEPTH_STENCIL_DESC dsdDESC = {};
+	dsdDESC.DepthEnable = true;
+	dsdDESC.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+	dsdDESC.DepthFunc = D3D11_COMPARISON_LESS;
+	ID3D11DepthStencilState* pDSState = nullptr;
+	hr = device.outDevice->CreateDepthStencilState(&dsdDESC, &pDSState);
+	assert(SUCCEEDED(hr) && "CreateDepthStencilState Failed");
+	device.context->OMSetDepthStencilState(pDSState, 1u);
+	D3D11_TEXTURE2D_DESC descDepth = {};
+	DXGI_SWAP_CHAIN_DESC swpdesc = {};
+	device.swapChain->GetDesc(&swpdesc);
+	descDepth.Width = swpdesc.BufferDesc.Width;
+	descDepth.Height = swpdesc.BufferDesc.Height;
+	descDepth.MipLevels = 1u;
+	descDepth.ArraySize = 1u;
+	descDepth.Format = DXGI_FORMAT_D32_FLOAT;
+	descDepth.SampleDesc.Count = 1u;
+	descDepth.SampleDesc.Quality = 0u;
+	descDepth.Usage = D3D11_USAGE_DEFAULT;
+	descDepth.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	ID3D11Texture2D* pDSTexture = nullptr;
+	hr = device.outDevice->CreateTexture2D(&descDepth, nullptr, &pDSTexture);
+	assert(SUCCEEDED(hr)&&"CreateTexture2D Failed DSV Setup");
+	ID3D11DepthStencilView* pDSV = nullptr;
+	D3D11_DEPTH_STENCIL_VIEW_DESC descDSV = {};
+	descDSV.Format = DXGI_FORMAT_D32_FLOAT;
+	descDSV.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+	descDSV.Texture2D.MipSlice = 0u;
+	hr = device.outDevice->CreateDepthStencilView(pDSTexture, &descDSV, &pDSV); // dawh shit mf!
+	assert(SUCCEEDED(hr) && "CreateDepthStencilView Failed!");
+	dsdDESC.StencilEnable = false;
+
+
+
+	//This is typically setup on per-pass shit. Its like what we render to so we don't need to like actually put it inside of a whatever blah blah blah
 	while (!m_bShouldClose)
 	{
-		float fDelta = timer.GetDelta();
+		//float fDelta = timer.GetDelta();
 		m_bShouldClose = HandleWindowMessages(&msg);
 		grcStateBlock::BeginFrame();
 		GetClientRect(hwnd, &winRect);
 		device.context->ClearRenderTargetView(device.backBuffer, fClearCol); // As it is a apart of the stateblock what we need to do is Clear when we do a NEW FRAME (not begin a frame because we have to setup like topology inside of that.
-		device.context->OMSetRenderTargets(1, &device.backBuffer, nullptr); //I need someway to have dynamic render targets or rendertarget creation dynamically. Handled internally.
+		device.context->ClearDepthStencilView(pDSV, D3D11_CLEAR_DEPTH, 1.0f, 0u);
+		device.context->OMSetRenderTargets(1, &device.backBuffer, pDSV); // I guess this does need to be here?
 		iaLayout.Bind(); 
 		//We could abstract this part out right now and setup so that we have some sort of intermingling of shader sampler shit. hmm.
 		device.context->PSSetShaderResources(0, 1, &char_social_club_srv);
 		device.context->PSSetSamplers(0, 1, &samplerState);
-		model.Draw(fDelta);
+		model.Draw(0.0, 0.0, 0.6f);
+		model.Draw(0.0, 1.4f, 1.7f); // double draw sim shit.
 		grcStateBlock::EndFrame(); // clear and await more instruction.
 		device.swapChain->Present(1, 0);
 	}
