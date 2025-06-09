@@ -37,6 +37,7 @@ private:
 		ID3D11RasterizerState* ret = nullptr;
 		D3D11_RASTERIZER_DESC desc = {};
 		desc.CullMode = D3D11_CULL_BACK;
+		desc.FrontCounterClockwise = 0;
 		desc.FillMode = D3D11_FILL_SOLID;
 		HRESULT hr = grcDeviced3d::Get()->outDevice->CreateRasterizerState(&desc, &ret);
 		assert(SUCCEEDED(hr)); //cap that mf

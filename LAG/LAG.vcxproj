@@ -138,6 +138,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="thirdparty\imgui.cpp" />
+    <ClCompile Include="thirdparty\imgui_demo.cpp" />
+    <ClCompile Include="thirdparty\imgui_draw.cpp" />
+    <ClCompile Include="thirdparty\imgui_impl_dx11.cpp" />
+    <ClCompile Include="thirdparty\imgui_impl_win32.cpp" />
+    <ClCompile Include="thirdparty\imgui_tables.cpp" />
+    <ClCompile Include="thirdparty\imgui_widgets.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\LAGGraphics\LAGGraphics.vcxproj">
@@ -151,6 +158,7 @@
     <ClInclude Include="Buffer\Buffer.h" />
     <ClInclude Include="Buffer\indexbuffer.h" />
     <ClInclude Include="Buffer\vertexbuffer.h" />
+    <ClInclude Include="Cam\Camera.h" />
     <ClInclude Include="device\device.h" />
     <ClInclude Include="InputAssembly\InputAssembly.h" />
     <ClInclude Include="model\grcmodel.h" />
@@ -158,6 +166,14 @@
     <ClInclude Include="Shader\Shader.h" />
     <ClInclude Include="Shader\Shadergroup.h" />
     <ClInclude Include="State\Stateblock.h" />
+    <ClInclude Include="thirdparty\imconfig.h" />
+    <ClInclude Include="thirdparty\imgui.h" />
+    <ClInclude Include="thirdparty\imgui_impl_dx11.h" />
+    <ClInclude Include="thirdparty\imgui_impl_win32.h" />
+    <ClInclude Include="thirdparty\imgui_internal.h" />
+    <ClInclude Include="thirdparty\imstb_rectpack.h" />
+    <ClInclude Include="thirdparty\imstb_textedit.h" />
+    <ClInclude Include="thirdparty\imstb_truetype.h" />
     <ClInclude Include="thirdparty\stb_image.h" />
   </ItemGroup>
   <ItemGroup>

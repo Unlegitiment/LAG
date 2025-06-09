@@ -24,7 +24,79 @@
 #pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+class CRenderPass {
+public:
+	void InitClass() { // Setup for Depth State so we own the object. Ideally we'd also do some *magic* with other info. but this right now just relies on RenderTarget stuff
+		HRESULT hr = S_OK;
+		D3D11_DEPTH_STENCIL_DESC dsdDESC = {};
+		dsdDESC.DepthEnable = true;
+		dsdDESC.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+		dsdDESC.DepthFunc = D3D11_COMPARISON_LESS;
+		ID3D11DepthStencilState* pDSState = nullptr;
+		hr = grcDeviced3d::Get()->outDevice->CreateDepthStencilState(&dsdDESC, &pDSState);
+		this->m_pDepthStencilState = pDSState;
+		assert(SUCCEEDED(hr) && "CreateDepthStencilState Failed");
+		D3D11_TEXTURE2D_DESC descDepth = {};
+		DXGI_SWAP_CHAIN_DESC swpdesc = {};
+		grcDeviced3d::Get()->swapChain->GetDesc(&swpdesc);
+		descDepth.Width = swpdesc.BufferDesc.Width;
+		descDepth.Height = swpdesc.BufferDesc.Height;
+		descDepth.MipLevels = 1u;
+		descDepth.ArraySize = 1u;
+		descDepth.Format = DXGI_FORMAT_D32_FLOAT;
+		descDepth.SampleDesc.Count = 1u;
+		descDepth.SampleDesc.Quality = 0u;
+		descDepth.Usage = D3D11_USAGE_DEFAULT;
+		descDepth.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+		ID3D11Texture2D* pDSTexture = nullptr;
+		hr = grcDeviced3d::Get()->outDevice->CreateTexture2D(&descDepth, nullptr, &pDSTexture);
+		assert(SUCCEEDED(hr) && "CreateTexture2D Failed DSV Setup");
+		ID3D11DepthStencilView* pDSV = nullptr;
+		D3D11_DEPTH_STENCIL_VIEW_DESC descDSV = {};
+		descDSV.Format = DXGI_FORMAT_D32_FLOAT;
+		descDSV.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+		descDSV.Texture2D.MipSlice = 0u;
+		hr = grcDeviced3d::Get()->outDevice->CreateDepthStencilView(pDSTexture, &descDSV, &pDSV); // dawh shit mf!
+		assert(SUCCEEDED(hr) && "CreateDepthStencilView Failed!");
+		dsdDESC.StencilEnable = false;
+		m_pDepthStencilView = pDSV;
+	}
+	// Ownership transfer: ID3D11RenderTargetView* now owned by CRenderPass::m_RenderTargets
+	void PushRenderTarget(ID3D11RenderTargetView* rendertarget) {
+		this->m_RenderTargets.push_back(rendertarget);
+	}
+	void BeginFrame() {
+		assert(!m_RenderTargets.empty() && "There is no RenderTargets created! How you gonna render to nothing lol!");
+		std::for_each(m_RenderTargets.begin(), m_RenderTargets.end(), [&](ID3D11RenderTargetView* render)->void {
+				grcDeviced3d::Get()->context->ClearRenderTargetView(render, m_ClearColor); // As it is a apart of the stateblock what we need to do is Clear when we do a NEW FRAME (not begin a frame because we have to setup like topology inside of that.
+		});
+		grcDeviced3d::Get()->context->ClearDepthStencilView(m_pDepthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0u);
+		grcDeviced3d::Get()->context->OMSetRenderTargets((UINT)m_RenderTargets.size(), m_RenderTargets.data(), m_pDepthStencilView); // I guess this does need to be here?
+		grcDeviced3d::Get()->context->OMSetDepthStencilState(m_pDepthStencilState, 1u);
+	}
+	ID3D11RenderTargetView* GetTarget(int _index) {
+		assert(_index <= m_RenderTargets.size() && __FUNCTION__" supplied argument over bounds");
+		return m_RenderTargets[_index];
+	}
+	ID3D11DepthStencilView* GetDepthStencil() { return this->m_pDepthStencilView; }
+	ID3D11DepthStencilState* GetDepthState() { return this->m_pDepthStencilState; }
+	void EndFrame() {
 
+	}
+	void DestroyClass() {
+		std::for_each(m_RenderTargets.begin(), m_RenderTargets.end(), [&](ID3D11RenderTargetView* render) -> void {
+			render->Release();
+		});
+		m_pDepthStencilView->Release();
+		m_pDepthStencilState->Release();
+	}
+	
+private:
+	FLOAT m_ClearColor[4] = { 0 / 255.0f, 0 / 255.0f, 32 / 255.0f, 255 / 255.0f };
+	std::vector<ID3D11RenderTargetView*> m_RenderTargets;
+	ID3D11DepthStencilState* m_pDepthStencilState = nullptr;
+	ID3D11DepthStencilView* m_pDepthStencilView = nullptr;
+};
 
 
 
@@ -36,6 +108,9 @@ std::vector<wchar_t> ConvertString([[maybe_unused]] const char* string, [[maybe_
 	//mbstowcs_s(charw.data(), string, LAG_MAX_PATH);
 	return {};
 }
+#include "thirdparty\imgui.h"
+#include "thirdparty\imgui_impl_win32.h"
+#include "thirdparty\imgui_impl_dx11.h"
 /*
 	Returns whether WM_QUIT is triggered!;
 */
@@ -47,7 +122,6 @@ bool HandleWindowMessages(MSG* msg) {
 			return true;
 		}
 	}
-
 	return false;
 }
 class CTimer {
@@ -65,24 +139,39 @@ private:
 	std::chrono::high_resolution_clock::time_point	m_Last;
 };
 
-int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTANCE hPrevInstance, [[maybe_unused]]PWSTR pCmdLine, [[maybe_unused]]int nCmdShow)
-{
-	// Register the window class.
+
+void SetupDebug(HWND hwnd) {
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO();
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+	ImGui_ImplWin32_Init(hwnd);
+	ImGui_ImplDX11_Init(grcDeviced3d::Get()->outDevice, grcDeviced3d::Get()->context);
+}
+
+void* CreateWinTest([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINSTANCE hPrevInstance, [[maybe_unused]] PWSTR pCmdLine, [[maybe_unused]] int nCmdShow) {
 	const wchar_t CLASS_NAME[] = L"grcWindow";
 	WNDCLASS wc = { };
 	wc.lpfnWndProc = WindowProc;
 	wc.hInstance = hInstance;
 	wc.lpszClassName = CLASS_NAME;
 	RegisterClass(&wc);
-	HWND hwnd = CreateWindowEx( 0, CLASS_NAME, L"Grand Theft Auto VI", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, hInstance, NULL);
+	HWND hwnd = CreateWindowEx(0, CLASS_NAME, L"Grand Theft Auto VI", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1920, 1080, NULL, NULL, hInstance, NULL);
 	if (hwnd == NULL) return 0;
 	ShowWindow(hwnd, nCmdShow);
+	return hwnd;
+}
+int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTANCE hPrevInstance, [[maybe_unused]]PWSTR pCmdLine, [[maybe_unused]]int nCmdShow)
+{
+	// Register the window class.
+	HWND hwnd = (HWND)CreateWinTest(hInstance, hPrevInstance, pCmdLine, nCmdShow);
 	// Run the message loop.
 	grcDeviced3d device = grcDeviced3d(hwnd);
 	device.Set(&device);
 	grcModel model = grcModel();
 	grcInputLayout iaLayout = grcInputLayout(model.GetShaderGroup()->GetVertexShader()); // move this into model since it relies on info of model
-	float fClearCol[4] = { 0 / 255.0f, 0 / 255.0f, 32 / 255.0f, 255 / 255.0f }; 
+	//float fClearCol[4] = { 0 / 255.0f, 0 / 255.0f, 32 / 255.0f, 255 / 255.0f }; 
 	MSG msg = { };
 	bool m_bShouldClose = false;
 	RECT winRect;
@@ -90,23 +179,9 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 	grcStateBlock::sm_pRect = &winRect;
 	grcStateBlock::Init();
 	CTimer timer;
-	IDXGIFactory* factory = NULL;
-	HRESULT hr = CreateDXGIFactory(__uuidof(IDXGIFactory), (void**)&factory);
-	assert((SUCCEEDED(hr)));
-	UINT i = 0;
-	IDXGIAdapter* pAdapter = nullptr;
-	std::vector<IDXGIAdapter*> adapters;
-	while (factory->EnumAdapters(i, &pAdapter) != DXGI_ERROR_NOT_FOUND) {
-		adapters.push_back(pAdapter);
-		++i; // I really got learn the difference here.
-	}
-	for (auto* adapter : adapters) {
-		DXGI_ADAPTER_DESC desc;
-		adapter->GetDesc(&desc);
-		OutputDebugStringW(desc.Description);
-		OutputDebugStringW(L"\n");
-	}
-
+	HRESULT hr = S_OK;
+	CRenderPass renderPass = CRenderPass();
+	renderPass.InitClass();
 	ID3D11ShaderResourceView* char_social_club_srv = nullptr;
 	ID3D11Texture2D* Texture;
 	int x = 0, y = 0, comp = 0;
@@ -144,66 +219,64 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 	hr = device.outDevice->CreateSamplerState(&sampDesc, &samplerState);
 	assert(SUCCEEDED(hr) && "Failed to do CreateSamplerState");
 	stbi_image_free(uc);
-	//This is all DEPTH STENCIL stuff until OmSetRenderTargets. Learn how to actually abstract and where to abstract it since you've been avoiding RenderPasses lmao
-	D3D11_DEPTH_STENCIL_DESC dsdDESC = {};
-	dsdDESC.DepthEnable = true;
-	dsdDESC.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-	dsdDESC.DepthFunc = D3D11_COMPARISON_LESS;
-	ID3D11DepthStencilState* pDSState = nullptr;
-	hr = device.outDevice->CreateDepthStencilState(&dsdDESC, &pDSState);
-	assert(SUCCEEDED(hr) && "CreateDepthStencilState Failed");
-	device.context->OMSetDepthStencilState(pDSState, 1u);
-	D3D11_TEXTURE2D_DESC descDepth = {};
-	DXGI_SWAP_CHAIN_DESC swpdesc = {};
-	device.swapChain->GetDesc(&swpdesc);
-	descDepth.Width = swpdesc.BufferDesc.Width;
-	descDepth.Height = swpdesc.BufferDesc.Height;
-	descDepth.MipLevels = 1u;
-	descDepth.ArraySize = 1u;
-	descDepth.Format = DXGI_FORMAT_D32_FLOAT;
-	descDepth.SampleDesc.Count = 1u;
-	descDepth.SampleDesc.Quality = 0u;
-	descDepth.Usage = D3D11_USAGE_DEFAULT;
-	descDepth.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-	ID3D11Texture2D* pDSTexture = nullptr;
-	hr = device.outDevice->CreateTexture2D(&descDepth, nullptr, &pDSTexture);
-	assert(SUCCEEDED(hr)&&"CreateTexture2D Failed DSV Setup");
-	ID3D11DepthStencilView* pDSV = nullptr;
-	D3D11_DEPTH_STENCIL_VIEW_DESC descDSV = {};
-	descDSV.Format = DXGI_FORMAT_D32_FLOAT;
-	descDSV.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
-	descDSV.Texture2D.MipSlice = 0u;
-	hr = device.outDevice->CreateDepthStencilView(pDSTexture, &descDSV, &pDSV); // dawh shit mf!
-	assert(SUCCEEDED(hr) && "CreateDepthStencilView Failed!");
-	dsdDESC.StencilEnable = false;
-
-
-
+	//ImGUI setup
+	SetupDebug(hwnd);
 	//This is typically setup on per-pass shit. Its like what we render to so we don't need to like actually put it inside of a whatever blah blah blah
+	renderPass.PushRenderTarget(grcDeviced3d::Get()->backBuffer);
 	while (!m_bShouldClose)
 	{
+
 		//float fDelta = timer.GetDelta();
 		m_bShouldClose = HandleWindowMessages(&msg);
+		ImGui_ImplDX11_NewFrame();
+		ImGui_ImplWin32_NewFrame();
+		ImGui::NewFrame();
+			ImGui::Begin("Cam");
+			ImGui::SliderFloat("X", &model.camera->POSITION.m128_f32[0], -360, 360);
+			ImGui::SliderFloat("Y", &model.camera->POSITION.m128_f32[1], -360, 360);
+			ImGui::SliderFloat("Z", &model.camera->POSITION.m128_f32[2], -360, 360);
+			ImGui::SliderFloat("Yaw", &model.camera->Yaw, -360, 360);
+			ImGui::SliderFloat("Pitch", &model.camera->Pitch, -360, 360);
+			ImGui::SliderFloat("Zoom", &model.camera->Zoom, 0, 100);
+			if (ImGui::Button("Reset")) {
+				model.camera->POSITION = { 0.0,0.0,0.0,0.0f }; // make vector!
+				model.camera->FRONT = { 0.0,0.0,-1.0f };
+				model.camera->UP = { 0.0,1.0,0.0 };
+				model.camera->RIGHT;
+				model.camera->WORLDUP = { 0.0,1.0,0.0 };
+				model.camera->Yaw = -90.0;
+				model.camera->Pitch = 0.0f;
+				model.camera->Zoom = 45.f;
+			}
+		ImGui::End();
 		grcStateBlock::BeginFrame();
 		GetClientRect(hwnd, &winRect);
-		device.context->ClearRenderTargetView(device.backBuffer, fClearCol); // As it is a apart of the stateblock what we need to do is Clear when we do a NEW FRAME (not begin a frame because we have to setup like topology inside of that.
-		device.context->ClearDepthStencilView(pDSV, D3D11_CLEAR_DEPTH, 1.0f, 0u);
-		device.context->OMSetRenderTargets(1, &device.backBuffer, pDSV); // I guess this does need to be here?
+		renderPass.BeginFrame();
 		iaLayout.Bind(); 
 		//We could abstract this part out right now and setup so that we have some sort of intermingling of shader sampler shit. hmm.
 		device.context->PSSetShaderResources(0, 1, &char_social_club_srv);
 		device.context->PSSetSamplers(0, 1, &samplerState);
-		model.Draw(0.0, 0.0, 0.6f);
-		model.Draw(0.0, 1.4f, 1.7f); // double draw sim shit.
+		model.Draw(0.0f, 0.0f, -5);
+		model.Draw(1, 1, 5.f); // double draw sim shit.
+		renderPass.EndFrame(); // Does nothing but makes sense here.
 		grcStateBlock::EndFrame(); // clear and await more instruction.
+		ImGui::Render();
+		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 		device.swapChain->Present(1, 0);
 	}
+	ImGui_ImplDX11_Shutdown();
+	ImGui_ImplWin32_Shutdown();
+	ImGui::DestroyContext();
 	grcStateBlock::DestroyStateBlock();
+	renderPass.DestroyClass();
 	return 0;
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+	if (ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam))
+		return true;
 	switch (uMsg)
 	{
 	case WM_DESTROY:
