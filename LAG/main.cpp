@@ -24,6 +24,15 @@
 #pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+/*
+	Research Notes on Concept of RenderPass:
+		- Effectively In Vulkan its a manager of subpasses 
+		- Subpasses are basically dependancy related objects that tell the driver that we intend to output to resource a or we are using resource a in subpass b. 
+		- Renderpasses do not own the objects they relay on they simply manage them so the driver can handle them (this is Vulkan with CMD Buffers and a bunch of shi.)
+		- A renderpass in the case of D3D11 can just be something that manages the output merger. Unlike grcStateBlock which controls Rasterizer States, and Topology, this class basically manages OutputMerger objects.
+		- Things like Depth (+ its state), RenderTargets, etc all run through a renderpass. 
+		- We should also specify that a RenderSegment is different from a RenderPass cause in my head a RenderSegment is an entire like segment of a Draw they also own RenderPasses, the objects they intend to draw etc. basically an entire pass.
+*/
 class CRenderPass {
 public:
 	void InitClass() { // Setup for Depth State so we own the object. Ideally we'd also do some *magic* with other info. but this right now just relies on RenderTarget stuff
@@ -98,9 +107,6 @@ private:
 	ID3D11DepthStencilView* m_pDepthStencilView = nullptr;
 };
 
-
-
-
 #define LAG_MAX_PATH 512
 std::vector<wchar_t> ConvertString([[maybe_unused]] const char* string, [[maybe_unused]] size_t size) { 
 	//std::vector<wchar_t> charw;
@@ -162,20 +168,90 @@ void* CreateWinTest([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 	ShowWindow(hwnd, nCmdShow);
 	return hwnd;
 }
+class CWindow {
+public:
+	static constexpr const wchar_t* WNDCLASSNAME = L"lagWindow";
+	static void Init(HINSTANCE hinstnace) {
+		wc.lpfnWndProc = WindowProc; 
+		wc.hInstance = hinstnace;
+		wc.lpszClassName = WNDCLASSNAME;
+		RegisterClass(&wc);
+		HWND hwnd = CreateWindowEx(0, WNDCLASSNAME, L"Grand Theft Auto VI", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1920, 1080, NULL, NULL, wc.hInstance, NULL);
+		if (hwnd == NULL) throw std::runtime_error("Problem with Window Creation!");
+		ShowWindow(hwnd, 1); // nCmdShow check.
+		WINDOW_HANDLE = hwnd;
+	}
+	static void* GetHandle() {
+		return WINDOW_HANDLE;
+	}
+	static void Destroy() {
+		CloseWindow((HWND)WINDOW_HANDLE);
+	}
+private:
+	static inline WNDCLASS wc = { };
+	static inline void* WINDOW_HANDLE = nullptr;
+};
+class CRenderSegment {
+public:
+	virtual void BuildDrawList() { // builds a base list of drawables.
+		throw std::exception("Unimplemented right now!");
+	}
+private:
+
+};
+class CRenderSegement_SceneEntity : public CRenderSegment {
+	void BuildDrawList() {
+		// fetch list of entities from CScene here get their drawables -> call draw. just also gotta setup shader context stuff which should be handled by some intermitten stuff. probably like a drawhandler or something. just need to store a location of a texture though for a drawable which could go inside of the drawable unless a drawable should just a model stuff? not sure rn kinda tired. 
+		// also need something like LAGGLOBALS as a variable register. come back tmr for more stuff. 
+	}
+};
+class CRenderSegmentMgr {
+public:
+
+private:
+	std::vector<CRenderSegment*> m_RenderSegments;
+};
+class CRenderSetup {
+public:
+	static void InitRenderSegments() {
+
+	}
+private:
+	static inline CRenderSegment* sm_pRenderSegment = nullptr;
+};
+// Depends on CWINDOW
+class CRenderer { 
+public:
+	static void Init() {
+		device = new grcDeviced3d((HWND)CWindow::GetHandle()); 
+		device->Set(device);
+	}
+	static void Destroy() {
+		delete device;
+		device = nullptr;
+	}
+	static grcDeviced3d* GetDevice() { return device; }
+private:
+	static inline grcDeviced3d* device = nullptr;
+};
+
 int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTANCE hPrevInstance, [[maybe_unused]]PWSTR pCmdLine, [[maybe_unused]]int nCmdShow)
 {
 	// Register the window class.
-	HWND hwnd = (HWND)CreateWinTest(hInstance, hPrevInstance, pCmdLine, nCmdShow);
+	CWindow::Init(hInstance);
+	CRenderer::Init();
 	// Run the message loop.
-	grcDeviced3d device = grcDeviced3d(hwnd);
-	device.Set(&device);
+	grcDeviced3d* raw_Dev = CRenderer::GetDevice();
+	if (!raw_Dev) return 1; // failed
+	grcDeviced3d device = *raw_Dev; // Why not just make this NOT like this you know?
+	//device.Set(&device);
 	grcModel model = grcModel();
 	grcInputLayout iaLayout = grcInputLayout(model.GetShaderGroup()->GetVertexShader()); // move this into model since it relies on info of model
 	//float fClearCol[4] = { 0 / 255.0f, 0 / 255.0f, 32 / 255.0f, 255 / 255.0f }; 
 	MSG msg = { };
 	bool m_bShouldClose = false;
 	RECT winRect;
-	GetClientRect(hwnd, &winRect);
+	GetClientRect((HWND)CWindow::GetHandle() , &winRect);
 	grcStateBlock::sm_pRect = &winRect;
 	grcStateBlock::Init();
 	CTimer timer;
@@ -220,7 +296,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 	assert(SUCCEEDED(hr) && "Failed to do CreateSamplerState");
 	stbi_image_free(uc);
 	//ImGUI setup
-	SetupDebug(hwnd);
+	SetupDebug((HWND)CWindow::GetHandle());
 	//This is typically setup on per-pass shit. Its like what we render to so we don't need to like actually put it inside of a whatever blah blah blah
 	renderPass.PushRenderTarget(grcDeviced3d::Get()->backBuffer);
 	while (!m_bShouldClose)
@@ -250,7 +326,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 			}
 		ImGui::End();
 		grcStateBlock::BeginFrame();
-		GetClientRect(hwnd, &winRect);
+		GetClientRect((HWND)CWindow::GetHandle(), &winRect);
 		renderPass.BeginFrame();
 		iaLayout.Bind(); 
 		//We could abstract this part out right now and setup so that we have some sort of intermingling of shader sampler shit. hmm.
