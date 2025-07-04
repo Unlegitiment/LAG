@@ -58,13 +58,13 @@ public:
 		this->camera->Update(); // move to scene have the current scene own the camera lend to Renderpass or just hand a smaller object. /shrug
 		Test.model = DirectX::XMMatrixRotationZ(0.0f) * DirectX::XMMatrixScaling(0.5f, 0.5f, 0.5f) * DirectX::XMMatrixTranslation(x, y, z);
 		Test.view = camera->GetViewMatrix();
-		Test.projection = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(camera->Zoom), 1920.f / 1080.f, 0.5f, 100.0f);
+		Test.projection = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(camera->Zoom), 1920.f / 1080.f, 0.5f, 10000.0f);
 		Test.Transform = DirectX::XMMatrixTranspose(Test.model * Test.view * Test.projection);
 		buffer->Update(&Test, sizeof(Constants)); // fun
 		m_pShader->Bind();
 		m_pIndexBuffer->Bind();
 		m_pVertexBuffer->Bind();
-		grcDeviced3d::Get()->context->DrawIndexed(36, 0, 0); //wdym only 36? theres a lot more vertices.
+		grcDeviced3d::Get()->context->DrawIndexed(36, 0, 0); //wdym only 36? theres a lot more vertices. (later) can I read? am I just an idiot? 
 	}
 	~grcModel() {
 		delete m_pIndexBuffer;
