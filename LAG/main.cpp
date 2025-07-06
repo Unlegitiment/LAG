@@ -24,125 +24,137 @@
 #pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
 
 namespace legit {
-	template<typename T = unsigned long long> using u64 = T;
-	template<typename T = long long> using s64 = T;
-	template<typename T = unsigned int> using u32 = T;
-	template<typename T = int> using s32 = T;
-	template<typename T = unsigned short> using u16 = T;
-	template<typename T = signed short> using s16 = T;
-	template<typename T = unsigned char> using u8 = T;
-	template<typename T = signed char> using s8 = T;
-	template<typename T = float> using f32 = T;
-	template<typename T = double> using f64 = T;
-	namespace lit {
-		// To write a template library you must first invent the universe.
-		template<typename T, T val>
-		struct Type {
-			using ValueType = T;
-			using Constant = Type;
-			static constexpr T value = val;
-		};
-		template<bool val> using TypeConditional = Type<bool, val>; using TrueConditional = TypeConditional<true>; using FalseConditional = TypeConditional<false>;
-		template<typename T> struct IsPrimitive : public FalseConditional {};
-		template<> struct IsPrimitive<int> : public TrueConditional {};
-		template<typename T> struct IsPointer : public FalseConditional {};
-		template<typename T> struct IsPointer<T*> : public TrueConditional {};
-		template<typename T> struct StripPointer {
-			using Type = T;
-			using NoPointerType = T;
-		};
-		template<typename T> struct StripPointer<T*> { 
-			using Type = T; // check?
-			using NoPointerType = typename StripPointer<T>::NoPointerType; // OHH ITS RECURSION THATS FUCKING FIRE DUDE!
-		};
-		template<typename T> struct IsDefaultConstructable {
-		private:
-			template<typename U, typename = decltype(U())> static TrueConditional Test(int);
-			template<typename> static FalseConditional Test(...);
-		public:
-			static constexpr bool value = decltype(Test<T>(1))::value;
-		};
-		template<typename T> struct AddRValue {
-			using type = T&&;
-		};
-		template<typename T> struct AddRValue<T&> {
-			using type = T&;
-		};
-		template<> struct AddRValue<void> {
-			using type = void;
-		};
-		template<typename T> typename AddRValue<T>::type DeclaredValue(); // This basically means like the value WILL exist but right now we are in compiler so the value doesn't.
-		template<typename T> struct IsCopyable {
-		private:
-			template<typename U, typename = decltype(U(DeclaredValue<const U&>()))> static TrueConditional Test(int);
-			template<typename> static FalseConditional Test(...);
-		public:
-			static constexpr bool value = decltype(Test<T>(1))::value;
-		};
-		template<bool Condition, typename T = void> struct EnableTypeIf { };
-		template<typename T> struct EnableTypeIf<true, T> {
-			using type = T;
-		};
-		template<bool Condition> struct EnableValueIf : public FalseConditional { };
-		template<> struct EnableValueIf<true> : public TrueConditional { };
-		// I only care about One operation right now. 
-		enum eOperation {
-			COMPARISON,
-		};
-		template<eOperation operation, typename T, typename = typename EnableTypeIf<!IsPrimitive<T>::value>::type> struct IsOperationSpecified {
-			static constexpr bool value = false;
-		};
-		template<typename T> struct IsOperationSpecified<COMPARISON, T> {
-		private:
-			template<typename U, typename = decltype(DeclaredValue<U&&>().operator==(DeclaredValue<const U&>()))> static TrueConditional Test(int); //bool operator==(const U&) const {}
-			template<typename> static FalseConditional Test(...);
-		public:
-			static constexpr bool value = decltype(Test<T>(1))::value;
-		};
-		template<typename T> static constexpr bool IsCopyableV = IsCopyable<T>::value;
-		template<typename T> constexpr bool HasComparisonOperatorV = IsOperationSpecified<COMPARISON, T>::value;
-		template<typename T>
-		class Allocator {
-		public:
-			T* Allocate(u32 amt) {
-				void* test = nullptr;
-				bool b = IsPointer<decltype(test)>::value;
-				return new T[amt]; //  we don't specify constructor arguments bc we don't know if there will be one. 
-			}
-		private:
-		};
-		template<typename T> struct DefaultComparison {
-			static bool Compare(const T& a, const T& b) {
-				return a == b; // assume operator== exists. @Todo implement Function Exists TMP.
-			}
-		};
-		template<typename T, Allocator<T> Allocator, template<typename> typename Comparison = DefaultComparison> class List {
-		private:
-			void AddCommon(T t) {
-			}
-		public:
-			void AddAndGrow(T&& val) { // value is temporary
-
-			}
-			void AddAndGrow(const T& val) { // value COULD be temp or perminent. either way we aren't gonna take chances and just assume its temporary.
-
-			}
-			void AddAndGrow(T& val) { // value has to exist. (fun fact this is not how they work. )
-
-			}
-			T operator[](u32 location) {
-				static_assert(location < m_Size && __FUNCTION__" Location is greater than alloted size.");
-				return m_pArray[location];
-			}
-		private:
-			T* m_pArray;
-			u32 m_Size; // namespace Legit. once we move LIT out of LEGIT this will cause issues. 
-			u32 m_Compacity;
-		};
+template<typename T = unsigned long long> using u64 = T;
+template<typename T = long long> using s64 = T;
+template<typename T = unsigned int> using u32 = T;
+template<typename T = int> using s32 = T;
+template<typename T = unsigned short> using u16 = T;
+template<typename T = signed short> using s16 = T;
+template<typename T = unsigned char> using u8 = T;
+template<typename T = signed char> using s8 = T;
+template<typename T = float> using f32 = T;
+template<typename T = double> using f64 = T;
+namespace lit {
+// To write a template library you must first invent the universe.
+template<typename T, T val>
+struct Type {
+	using ValueType = T;
+	using Constant = Type;
+	static constexpr T value = val;
+};
+template<bool val> using TypeConditional = Type<bool, val>; using TrueConditional = TypeConditional<true>; using FalseConditional = TypeConditional<false>;
+template<typename T> struct IsPrimitive : public FalseConditional {};
+template<> struct IsPrimitive<int> : public TrueConditional {};
+template<typename T> struct IsPointer : public FalseConditional {};
+template<typename T> struct IsPointer<T*> : public TrueConditional {};
+template<typename T> struct StripPointer {
+	using Type = T;
+	using NoPointerType = T;
+};
+template<typename T> struct StripPointer<T*> {
+	using Type = T; // check?
+	using NoPointerType = typename StripPointer<T>::NoPointerType; // OHH ITS RECURSION THATS FUCKING FIRE DUDE!
+};
+template<typename T> struct IsDefaultConstructable {
+private:
+	template<typename U, typename = decltype(U())> static TrueConditional Test(int);
+	template<typename> static FalseConditional Test(...);
+public:
+	static constexpr bool value = decltype(Test<T>(1))::value;
+};
+template<typename T> struct AddRValue {
+	using type = T&&;
+};
+template<typename T> struct AddRValue<T&> {
+	using type = T&;
+};
+template<> struct AddRValue<void> {
+	using type = void;
+};
+template<typename T> typename AddRValue<T>::type DeclaredValue(); // This basically means like the value WILL exist but right now we are in compiler so the value doesn't.
+template<typename T> struct IsCopyable {
+private:
+	template<typename U, typename = decltype(U(DeclaredValue<const U&>()))> static TrueConditional Test(int);
+	template<typename> static FalseConditional Test(...);
+public:
+	static constexpr bool value = decltype(Test<T>(1))::value;
+};
+template<bool Condition, typename T = void> struct EnableTypeIf { };
+template<typename T> struct EnableTypeIf<true, T> {
+	using type = T;
+};
+template<bool Condition> struct EnableValueIf : public FalseConditional { };
+template<> struct EnableValueIf<true> : public TrueConditional { };
+// I only care about One operation right now. 
+enum eOperation {
+	COMPARISON,
+};
+template<eOperation operation, typename T, typename = typename EnableTypeIf<!IsPrimitive<T>::value>::type> struct IsOperationSpecified {
+	static constexpr bool value = false;
+};
+template<typename T> struct IsOperationSpecified<COMPARISON, T> {
+private:
+	template<typename U, typename = decltype(DeclaredValue<U&&>().operator==(DeclaredValue<const U&>()))> static TrueConditional Test(int); //bool operator==(const U&) const {}
+	template<typename> static FalseConditional Test(...);
+public:
+	static constexpr bool value = decltype(Test<T>(1))::value;
+};
+template<typename T> static constexpr bool IsCopyableV = IsCopyable<T>::value;
+template<typename T> constexpr bool HasComparisonOperatorV = IsOperationSpecified<COMPARISON, T>::value;
+template<typename T>
+class Allocator {
+public:
+	T* Allocate(u32 amt) {
+		void* test = nullptr;
+		bool b = IsPointer<decltype(test)>::value;
+		return new T[amt]; //  we don't specify constructor arguments bc we don't know if there will be one. 
 	}
+private:
+};
+template <typename T, bool = IsPrimitive<T>::value>
+struct DefaultComparison
+{ // for customs
+	static bool Compare(T& a, T& b)
+	{
+		static_assert(HasComparisonOperatorV<T> && "Operator T does not have valid comparison");
+		return a == b;
+	}
+};
+template <typename T>
+struct DefaultComparison<T, true>
+{
+	static bool Compare(T& a, T& b)
+	{
+		return a == b;
+	}
+};
+template<typename T, Allocator<T> Allocator, DefaultComparison<T> comparison = DefaultComparison<T>()> class List {
+private:
+	void AddCommon(T t) {
+	}
+public:
+	void AddAndGrow(T&& val) { // value is temporary
+
+	}
+	void AddAndGrow(const T& val) { // value COULD be temp or perminent. either way we aren't gonna take chances and just assume its temporary.
+
+	}
+	void AddAndGrow(T& val) { // value has to exist. (fun fact this is not how they work. )
+
+	}
+	T operator[](u32 location) {
+		static_assert(location < m_Size && __FUNCTION__" Location is greater than alloted size.");
+		return m_pArray[location];
+	}
+private:
+	T* m_pArray;
+	u32 m_Size; // namespace Legit. once we move LIT out of LEGIT this will cause issues. 
+	u32 m_Compacity;
+};
+} // namespace lit.
 
 template<typename T = const char*, lit::Allocator<T> Allocator>
-class lfsPath{
+class lfsPath {
 public:
 	lfsPath(const char* path) : {
 
@@ -158,11 +170,11 @@ private:
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 /*
 	Research Notes on Concept of RenderPass:
-		- Effectively In Vulkan its a manager of subpasses 
-		- Subpasses are basically dependancy related objects that tell the driver that we intend to output to resource a or we are using resource a in subpass b. 
+		- Effectively In Vulkan its a manager of subpasses
+		- Subpasses are basically dependancy related objects that tell the driver that we intend to output to resource a or we are using resource a in subpass b.
 		- Renderpasses do not own the objects they relay on they simply manage them so the driver can handle them (this is Vulkan with CMD Buffers and a bunch of shi.)
 		- A renderpass in the case of D3D11 can just be something that manages the output merger. Unlike grcStateBlock which controls Rasterizer States, and Topology, this class basically manages OutputMerger objects.
-		- Things like Depth (+ its state), RenderTargets, etc all run through a renderpass. 
+		- Things like Depth (+ its state), RenderTargets, etc all run through a renderpass.
 		- We should also specify that a RenderSegment is different from a RenderPass cause in my head a RenderSegment is an entire like segment of a Draw they also own RenderPasses, the objects they intend to draw etc. basically an entire pass.
 		- Old Varient of the class. Do not use. Check RenderSegment
 */
@@ -210,8 +222,8 @@ public:
 	void BeginFrame() {
 		assert(!m_RenderTargets.empty() && "There is no RenderTargets created! How you gonna render to nothing lol!");
 		std::for_each(m_RenderTargets.begin(), m_RenderTargets.end(), [&](ID3D11RenderTargetView* render)->void {
-				grcDeviced3d::Get()->context->ClearRenderTargetView(render, m_ClearColor); // As it is a apart of the stateblock what we need to do is Clear when we do a NEW FRAME (not begin a frame because we have to setup like topology inside of that.
-		});
+			grcDeviced3d::Get()->context->ClearRenderTargetView(render, m_ClearColor); // As it is a apart of the stateblock what we need to do is Clear when we do a NEW FRAME (not begin a frame because we have to setup like topology inside of that.
+			});
 		grcDeviced3d::Get()->context->ClearDepthStencilView(m_pDepthStencilView, D3D11_CLEAR_DEPTH, 1.0f, 0u);
 		grcDeviced3d::Get()->context->OMSetRenderTargets((UINT)m_RenderTargets.size(), m_RenderTargets.data(), m_pDepthStencilView); // I guess this does need to be here?
 		grcDeviced3d::Get()->context->OMSetDepthStencilState(m_pDepthStencilState, 1u);
@@ -228,11 +240,11 @@ public:
 	void DestroyClass() {
 		std::for_each(m_RenderTargets.begin(), m_RenderTargets.end(), [&](ID3D11RenderTargetView* render) -> void {
 			render->Release();
-		});
+			});
 		m_pDepthStencilView->Release();
 		m_pDepthStencilState->Release();
 	}
-	
+
 private:
 	FLOAT m_ClearColor[4] = { 0 / 255.0f, 0 / 255.0f, 32 / 255.0f, 255 / 255.0f };
 	std::vector<ID3D11RenderTargetView*> m_RenderTargets;
@@ -241,7 +253,7 @@ private:
 };
 
 #define LAG_MAX_PATH 512
-std::vector<wchar_t> ConvertString([[maybe_unused]] const char* string, [[maybe_unused]] size_t size) { 
+std::vector<wchar_t> ConvertString([[maybe_unused]] const char* string, [[maybe_unused]] size_t size) {
 	//std::vector<wchar_t> charw;
 	//charw.resize(size + 1);
 	//mbstowcs_s(charw.data(), string, LAG_MAX_PATH);
@@ -305,7 +317,7 @@ class CWindow {
 public:
 	static constexpr const wchar_t* WNDCLASSNAME = L"lagWindow";
 	static void Init(HINSTANCE hinstnace) {
-		wc.lpfnWndProc = WindowProc; 
+		wc.lpfnWndProc = WindowProc;
 		wc.hInstance = hinstnace;
 		wc.lpszClassName = WNDCLASSNAME;
 		RegisterClass(&wc);
@@ -407,7 +419,7 @@ public:
 	static void Init() {
 		sm_pModelCache = new grcModelCache();
 	}
-	static grcModel* CreateModel(const char* filePath) {		
+	static grcModel* CreateModel(const char* filePath) {
 		if (auto* model = sm_pModelCache->GetModel(filePath)) {
 			return model;
 		}
@@ -476,7 +488,7 @@ public:
 		for (auto* seg : m_RenderSegments) {
 			this->m_pCurrentRenderSegment = seg;
 			seg->BuildDrawList();
-			seg->ExecuteDrawLists(); 
+			seg->ExecuteDrawLists();
 		}
 	}
 private:
@@ -484,10 +496,10 @@ private:
 	CRenderSegment* m_pCurrentRenderSegment = nullptr;
 };
 // Depends on CWINDOW
-class CRenderer { 
+class CRenderer {
 public:
 	static void Init() {
-		device = new grcDeviced3d((HWND)CWindow::GetHandle()); 
+		device = new grcDeviced3d((HWND)CWindow::GetHandle());
 		device->Set(device);
 		InitSegments();
 	}
@@ -573,7 +585,7 @@ private:
 	void* m_pTexture = nullptr; // this is the stbi_image stuff not sure 
 	ID3D11Texture2D* m_pRawTexture = nullptr;
 };
-int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTANCE hPrevInstance, [[maybe_unused]]PWSTR pCmdLine, [[maybe_unused]]int nCmdShow)
+int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINSTANCE hPrevInstance, [[maybe_unused]] PWSTR pCmdLine, [[maybe_unused]] int nCmdShow)
 {
 	// Register the window class.
 	CWindow::Init(hInstance);
@@ -590,7 +602,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 	MSG msg = { };
 	bool m_bShouldClose = false;
 	RECT winRect;
-	GetClientRect((HWND)CWindow::GetHandle() , &winRect);
+	GetClientRect((HWND)CWindow::GetHandle(), &winRect);
 	grcStateBlock::sm_pRect = &winRect;
 	grcStateBlock::Init();
 	CTimer timer;
@@ -599,7 +611,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 	renderPass.InitClass();
 	//int x = 0, y = 0, comp = 0;
 	//stbi_uc* uc = stbi_load("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\char_social_club.jpg", &x, &y, &comp, 4); // oopse
-	grcTexture2D texture = grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\char_social_club.jpg"); 
+	grcTexture2D texture = grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\char_social_club.jpg");
 	texture.GetShaderResource();
 	D3D11_SAMPLER_DESC sampDesc = {};
 	sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -633,30 +645,30 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]]HINSTA
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
 		ImGui::Begin("Cam");
-			ImGui::SliderFloat("X(Obj)", &entity->GetPosition().x, -100, 100);
-			ImGui::SliderFloat("Y(Obj)", &entity->GetPosition().y, -100, 100);
-			ImGui::SliderFloat("Z(Obj)", &entity->GetPosition().z, -100, 100);
-			ImGui::SliderFloat("X(Cam)", &model->camera->POSITION.m128_f32[0], -360, 360); // 
-			ImGui::SliderFloat("Y(Cam)", &model->camera->POSITION.m128_f32[1], -360, 360);
-			ImGui::SliderFloat("Z(Cam)", &model->camera->POSITION.m128_f32[2], -360, 360); // need to recalc pos
-			ImGui::SliderFloat("Yaw", &model->camera->Yaw, -360, 360);
-			ImGui::SliderFloat("Pitch", &model->camera->Pitch, -360, 360);
-			ImGui::SliderFloat("Zoom", &model->camera->Zoom, 0, 100);
-			if (ImGui::Button("Reset")) {
-				model->camera->POSITION = { 0.0,0.0,0.0,0.0f }; // make vector!
-				model->camera->FRONT = { 0.0,0.0,-1.0f };
-				model->camera->UP = { 0.0,1.0,0.0 };
-				model->camera->RIGHT;
-				model->camera->WORLDUP = { 0.0,1.0,0.0 };
-				model->camera->Yaw = -90.0;
-				model->camera->Pitch = 0.0f;
-				model->camera->Zoom = 45.f;
-			}
+		ImGui::SliderFloat("X(Obj)", &entity->GetPosition().x, -100, 100);
+		ImGui::SliderFloat("Y(Obj)", &entity->GetPosition().y, -100, 100);
+		ImGui::SliderFloat("Z(Obj)", &entity->GetPosition().z, -100, 100);
+		ImGui::SliderFloat("X(Cam)", &model->camera->POSITION.m128_f32[0], -360, 360); // 
+		ImGui::SliderFloat("Y(Cam)", &model->camera->POSITION.m128_f32[1], -360, 360);
+		ImGui::SliderFloat("Z(Cam)", &model->camera->POSITION.m128_f32[2], -360, 360); // need to recalc pos
+		ImGui::SliderFloat("Yaw", &model->camera->Yaw, -360, 360);
+		ImGui::SliderFloat("Pitch", &model->camera->Pitch, -360, 360);
+		ImGui::SliderFloat("Zoom", &model->camera->Zoom, 0, 100);
+		if (ImGui::Button("Reset")) {
+			model->camera->POSITION = { 0.0,0.0,0.0,0.0f }; // make vector!
+			model->camera->FRONT = { 0.0,0.0,-1.0f };
+			model->camera->UP = { 0.0,1.0,0.0 };
+			model->camera->RIGHT;
+			model->camera->WORLDUP = { 0.0,1.0,0.0 };
+			model->camera->Yaw = -90.0;
+			model->camera->Pitch = 0.0f;
+			model->camera->Zoom = 45.f;
+		}
 		ImGui::End();
 		grcStateBlock::BeginFrame();
 		GetClientRect((HWND)CWindow::GetHandle(), &winRect);
 		renderPass.BeginFrame();
-		iaLayout.Bind(); 
+		iaLayout.Bind();
 		device.context->PSSetShaderResources(0, 1, texture.GetSRVPtr());
 		device.context->PSSetSamplers(0, 1, &samplerState); // OOPSIES LMAO ( had this lower than the first render which means it wasn't used lmao
 		CRenderer::Render();
