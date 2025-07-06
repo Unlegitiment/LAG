@@ -24,6 +24,7 @@
   <ItemGroup>
     <ClInclude Include="datastructures\Allocator.h" />
     <ClInclude Include="datastructures\List.h" />
+    <ClInclude Include="function\functor.h" />
     <ClInclude Include="MetaProg\comparison.h" />
     <ClInclude Include="MetaProg\conditionals.h" />
     <ClInclude Include="MetaProg\enables.h" />

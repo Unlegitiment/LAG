@@ -1,5 +1,5 @@
 #pragma once // my fucking allocation implementation with placement new got fucking wiped. are you FUCKING JOKING BRUH. thanks microshit. 
-#include "LIT/types/integrals.h"
+#include "LIT\MetaProg\enables.h"
 #include "LIT\MetaProg\typeidentification.h"
 namespace lit {
 	
@@ -10,7 +10,7 @@ namespace lit {
 		using Ptr = T*;
 		using Ref = T&; // might have to strip lmao
 		using SizeType = __SizeType;
-		static_assert(IsIntegralConstant<SizeType>::value && "SizeType is not an integral constant. This means it is not a char, short, int, or long long!");
+		static_assert(IsIntegralConstant<SizeType>::value && "Allocator<T, ???> SizeType is not an integral constant. This means it is not a char, short, int, or long long!");
 		Ptr Allocate(SizeType Amount) {
 			return (Ptr)::operator new(sizeof(Type)*Amount); // using new like this is just weird lmao.
 		}

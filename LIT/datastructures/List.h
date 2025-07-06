@@ -24,11 +24,11 @@ namespace lit {
 			m_Size = 0;
 			m_pArray = m_Allocator.Allocate(m_Capacity); // create a default of 1.
 		}
-		void Add(const Type& type) {
+		void Add(const Type& data) {
 			if (DoINeedToGrow()) {
 				Grow();
 			}
-			m_pArray[m_Size++] = type; // fuhhh. 
+			m_Allocator.Construct(&m_pArray[m_Size++], data); // fuhhh. 
 		}
 	private:
 		void Grow() {

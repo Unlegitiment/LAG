@@ -53,5 +53,8 @@
     <ClInclude Include="datastructures\Allocator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="function\functor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
