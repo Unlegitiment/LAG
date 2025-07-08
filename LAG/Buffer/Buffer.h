@@ -1,7 +1,7 @@
 #pragma once
 #include "Buffer/Buffer.h"
 #include <d3d11.h>
-#include <device\device.h>
+#include "LAG\device\device.h"
 class grcBufferD3D {
 public:
 	grcBufferD3D(D3D11_BIND_FLAG bindType, void* data, UINT size) { // check val 

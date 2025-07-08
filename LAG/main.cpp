@@ -1,3 +1,4 @@
+#include "modelload.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <d3d11.h>       // D3D interface
@@ -7,165 +8,165 @@
 #include <cassert>
 #include <vector>
 #include <cstdlib>
+#include <algorithm>
 #include "Shader\Shadergroup.h"
 #include "Buffer\Buffer.h"
-#include <model\grcmodel.h>
-#include <InputAssembly\InputAssembly.h>
-#include <State\Stateblock.h>
+#include <LAG\model\grcmodel.h>
+#include <LAG\InputAssembly\InputAssembly.h>
+#include <LAG\State\Stateblock.h>
 #include <__msvc_chrono.hpp>
-#include <assimp/Importer.hpp>
+//#include <assimp/Importer.hpp>
 #include <DirectXMath.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "thirdparty/stb_image.h"
-
 #pragma comment( lib, "user32" )          // link against the win32 library
 #pragma comment( lib, "d3d11.lib" )       // direct3D library
 #pragma comment( lib, "dxgi.lib" )        // directx graphics interface
 #pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
 
-namespace legit {
-template<typename T = unsigned long long> using u64 = T;
-template<typename T = long long> using s64 = T;
-template<typename T = unsigned int> using u32 = T;
-template<typename T = int> using s32 = T;
-template<typename T = unsigned short> using u16 = T;
-template<typename T = signed short> using s16 = T;
-template<typename T = unsigned char> using u8 = T;
-template<typename T = signed char> using s8 = T;
-template<typename T = float> using f32 = T;
-template<typename T = double> using f64 = T;
-namespace lit {
-// To write a template library you must first invent the universe.
-template<typename T, T val>
-struct Type {
-	using ValueType = T;
-	using Constant = Type;
-	static constexpr T value = val;
-};
-template<bool val> using TypeConditional = Type<bool, val>; using TrueConditional = TypeConditional<true>; using FalseConditional = TypeConditional<false>;
-template<typename T> struct IsPrimitive : public FalseConditional {};
-template<> struct IsPrimitive<int> : public TrueConditional {};
-template<typename T> struct IsPointer : public FalseConditional {};
-template<typename T> struct IsPointer<T*> : public TrueConditional {};
-template<typename T> struct StripPointer {
-	using Type = T;
-	using NoPointerType = T;
-};
-template<typename T> struct StripPointer<T*> {
-	using Type = T; // check?
-	using NoPointerType = typename StripPointer<T>::NoPointerType; // OHH ITS RECURSION THATS FUCKING FIRE DUDE!
-};
-template<typename T> struct IsDefaultConstructable {
-private:
-	template<typename U, typename = decltype(U())> static TrueConditional Test(int);
-	template<typename> static FalseConditional Test(...);
-public:
-	static constexpr bool value = decltype(Test<T>(1))::value;
-};
-template<typename T> struct AddRValue {
-	using type = T&&;
-};
-template<typename T> struct AddRValue<T&> {
-	using type = T&;
-};
-template<> struct AddRValue<void> {
-	using type = void;
-};
-template<typename T> typename AddRValue<T>::type DeclaredValue(); // This basically means like the value WILL exist but right now we are in compiler so the value doesn't.
-template<typename T> struct IsCopyable {
-private:
-	template<typename U, typename = decltype(U(DeclaredValue<const U&>()))> static TrueConditional Test(int);
-	template<typename> static FalseConditional Test(...);
-public:
-	static constexpr bool value = decltype(Test<T>(1))::value;
-};
-template<bool Condition, typename T = void> struct EnableTypeIf { };
-template<typename T> struct EnableTypeIf<true, T> {
-	using type = T;
-};
-template<bool Condition> struct EnableValueIf : public FalseConditional { };
-template<> struct EnableValueIf<true> : public TrueConditional { };
-// I only care about One operation right now. 
-enum eOperation {
-	COMPARISON,
-};
-template<eOperation operation, typename T, typename = typename EnableTypeIf<!IsPrimitive<T>::value>::type> struct IsOperationSpecified {
-	static constexpr bool value = false;
-};
-template<typename T> struct IsOperationSpecified<COMPARISON, T> {
-private:
-	template<typename U, typename = decltype(DeclaredValue<U&&>().operator==(DeclaredValue<const U&>()))> static TrueConditional Test(int); //bool operator==(const U&) const {}
-	template<typename> static FalseConditional Test(...);
-public:
-	static constexpr bool value = decltype(Test<T>(1))::value;
-};
-template<typename T> static constexpr bool IsCopyableV = IsCopyable<T>::value;
-template<typename T> constexpr bool HasComparisonOperatorV = IsOperationSpecified<COMPARISON, T>::value;
-template<typename T>
-class Allocator {
-public:
-	T* Allocate(u32 amt) {
-		void* test = nullptr;
-		bool b = IsPointer<decltype(test)>::value;
-		return new T[amt]; //  we don't specify constructor arguments bc we don't know if there will be one. 
-	}
-private:
-};
-template <typename T, bool = IsPrimitive<T>::value>
-struct DefaultComparison
-{ // for customs
-	static bool Compare(T& a, T& b)
-	{
-		static_assert(HasComparisonOperatorV<T> && "Operator T does not have valid comparison");
-		return a == b;
-	}
-};
-template <typename T>
-struct DefaultComparison<T, true>
-{
-	static bool Compare(T& a, T& b)
-	{
-		return a == b;
-	}
-};
-template<typename T, Allocator<T> Allocator, DefaultComparison<T> comparison = DefaultComparison<T>()> class List {
-private:
-	void AddCommon(T t) {
-	}
-public:
-	void AddAndGrow(T&& val) { // value is temporary
-
-	}
-	void AddAndGrow(const T& val) { // value COULD be temp or perminent. either way we aren't gonna take chances and just assume its temporary.
-
-	}
-	void AddAndGrow(T& val) { // value has to exist. (fun fact this is not how they work. )
-
-	}
-	T operator[](u32 location) {
-		static_assert(location < m_Size && __FUNCTION__" Location is greater than alloted size.");
-		return m_pArray[location];
-	}
-private:
-	T* m_pArray;
-	u32 m_Size; // namespace Legit. once we move LIT out of LEGIT this will cause issues. 
-	u32 m_Compacity;
-};
-} // namespace lit.
-
-template<typename T = const char*, lit::Allocator<T> Allocator>
-class lfsPath {
-public:
-	lfsPath(const char* path) : {
-
-	}
-	void StripPath() {
-
-	}
-private:
-	char* m_Path;
-};
-} // namespace legit.
+//namespace legit {
+//template<typename T = unsigned long long> using u64 = T;
+//template<typename T = long long> using s64 = T;
+//template<typename T = unsigned int> using u32 = T;
+//template<typename T = int> using s32 = T;
+//template<typename T = unsigned short> using u16 = T;
+//template<typename T = signed short> using s16 = T;
+//template<typename T = unsigned char> using u8 = T;
+//template<typename T = signed char> using s8 = T;
+//template<typename T = float> using f32 = T;
+//template<typename T = double> using f64 = T;
+//namespace lit {
+//// To write a template library you must first invent the universe.
+//template<typename T, T val>
+//struct Type {
+//	using ValueType = T;
+//	using Constant = Type;
+//	static constexpr T value = val;
+//};
+//template<bool val> using TypeConditional = Type<bool, val>; using TrueConditional = TypeConditional<true>; using FalseConditional = TypeConditional<false>;
+//template<typename T> struct IsPrimitive : public FalseConditional {};
+//template<> struct IsPrimitive<int> : public TrueConditional {};
+//template<typename T> struct IsPointer : public FalseConditional {};
+//template<typename T> struct IsPointer<T*> : public TrueConditional {};
+//template<typename T> struct StripPointer {
+//	using Type = T;
+//	using NoPointerType = T;
+//};
+//template<typename T> struct StripPointer<T*> {
+//	using Type = T; // check?
+//	using NoPointerType = typename StripPointer<T>::NoPointerType; // OHH ITS RECURSION THATS FUCKING FIRE DUDE!
+//};
+//template<typename T> struct IsDefaultConstructable {
+//private:
+//	template<typename U, typename = decltype(U())> static TrueConditional Test(int);
+//	template<typename> static FalseConditional Test(...);
+//public:
+//	static constexpr bool value = decltype(Test<T>(1))::value;
+//};
+//template<typename T> struct AddRValue {
+//	using type = T&&;
+//};
+//template<typename T> struct AddRValue<T&> {
+//	using type = T&;
+//};
+//template<> struct AddRValue<void> {
+//	using type = void;
+//};
+//template<typename T> typename AddRValue<T>::type DeclaredValue(); // This basically means like the value WILL exist but right now we are in compiler so the value doesn't.
+//template<typename T> struct IsCopyable {
+//private:
+//	template<typename U, typename = decltype(U(DeclaredValue<const U&>()))> static TrueConditional Test(int);
+//	template<typename> static FalseConditional Test(...);
+//public:
+//	static constexpr bool value = decltype(Test<T>(1))::value;
+//};
+//template<bool Condition, typename T = void> struct EnableTypeIf { };
+//template<typename T> struct EnableTypeIf<true, T> {
+//	using type = T;
+//};
+//template<bool Condition> struct EnableValueIf : public FalseConditional { };
+//template<> struct EnableValueIf<true> : public TrueConditional { };
+//// I only care about One operation right now. 
+//enum eOperation {
+//	COMPARISON,
+//};
+//template<eOperation operation, typename T, typename = typename EnableTypeIf<!IsPrimitive<T>::value>::type> struct IsOperationSpecified {
+//	static constexpr bool value = false;
+//};
+//template<typename T> struct IsOperationSpecified<COMPARISON, T> {
+//private:
+//	template<typename U, typename = decltype(DeclaredValue<U&&>().operator==(DeclaredValue<const U&>()))> static TrueConditional Test(int); //bool operator==(const U&) const {}
+//	template<typename> static FalseConditional Test(...);
+//public:
+//	static constexpr bool value = decltype(Test<T>(1))::value;
+//};
+//template<typename T> static constexpr bool IsCopyableV = IsCopyable<T>::value;
+//template<typename T> constexpr bool HasComparisonOperatorV = IsOperationSpecified<COMPARISON, T>::value;
+//template<typename T>
+//class Allocator {
+//public:
+//	T* Allocate(u32 amt) {
+//		void* test = nullptr;
+//		bool b = IsPointer<decltype(test)>::value;
+//		return new T[amt]; //  we don't specify constructor arguments bc we don't know if there will be one. 
+//	}
+//private:
+//};
+//template <typename T, bool = IsPrimitive<T>::value>
+//struct DefaultComparison
+//{ // for customs
+//	static bool Compare(T& a, T& b)
+//	{
+//		static_assert(HasComparisonOperatorV<T> && "Operator T does not have valid comparison");
+//		return a == b;
+//	}
+//};
+//template <typename T>
+//struct DefaultComparison<T, true>
+//{
+//	static bool Compare(T& a, T& b)
+//	{
+//		return a == b;
+//	}
+//};
+//template<typename T, Allocator<T> Allocator, DefaultComparison<T> comparison = DefaultComparison<T>()> class List {
+//private:
+//	void AddCommon(T t) {
+//	}
+//public:
+//	void AddAndGrow(T&& val) { // value is temporary
+//
+//	}
+//	void AddAndGrow(const T& val) { // value COULD be temp or perminent. either way we aren't gonna take chances and just assume its temporary.
+//
+//	}
+//	void AddAndGrow(T& val) { // value has to exist. (fun fact this is not how they work. )
+//
+//	}
+//	T operator[](u32 location) {
+//		static_assert(location < m_Size && __FUNCTION__" Location is greater than alloted size.");
+//		return m_pArray[location];
+//	}
+//private:
+//	T* m_pArray;
+//	u32 m_Size; // namespace Legit. once we move LIT out of LEGIT this will cause issues. 
+//	u32 m_Compacity;
+//};
+//} // namespace lit.
+//
+//template<typename T = const char*, lit::Allocator<T> Allocator>
+//class lfsPath {
+//public:
+//	lfsPath(const char* path) : {
+//
+//	}
+//	void StripPath() {
+//
+//	}
+//private:
+//	char* m_Path;
+//};
+//} // namespace legit.
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 /*
@@ -350,17 +351,71 @@ private:
 struct sVector3 {
 	float x, y, z;
 };
+class grcModel_new {
+public:
+	grcModel_new(std::vector<grcGeometry*> apGeo) : m_apGeometry(apGeo) {
+		m_pShader = new grcShaderGroup(L"W:\\GTAV Scripts\\LAG\\shaders\\VertexShader.hlsl"); // Shader Module which means we have to read from mtl data or from model information Idk
+		m_apVertexBuffers.resize(m_apGeometry.size());
+		m_apIndexBuffers.resize(m_apGeometry.size());
+		for (int i = 0; i < (int)m_apGeometry.size(); i++) {
+			grcGeometry* pGeo = m_apGeometry[i];
+			m_apVertexBuffers[i] = new grcVertexBuffer(pGeo->GetGeometry().data(), (UINT)(pGeo->GetGeometry().size() * sizeof(VertexSpecifier)), 5 * sizeof(float));
+			m_apIndexBuffers[i] = new grcIndexBuffer(pGeo->GetIndices().data(), (UINT)pGeo->GetIndices().size() * sizeof(int));
+			if (buffer) m_pShader->AppendShaderConstantBuffer(0, buffer);
 
+		}
+		CCameraMgr::Init();
+		int retVal = CCameraMgr::Get().PushNewCamera(camera);
+		CCameraMgr::Get().ActivateCamera(retVal); // woohoo.
+	}
+	void Draw(float x, float y, float z) {
+		this->camera->Update(); // move to scene have the current scene own the camera lend to Renderpass or just hand a smaller object. /shrug
+		Test.model = DirectX::XMMatrixRotationZ(0.0f) * DirectX::XMMatrixScaling(1, 1, 1) * DirectX::XMMatrixTranslation(x, y, z);
+		Test.view = camera->GetViewMatrix();
+		Test.projection = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(camera->Zoom), 1920.f / 1080.f, 0.5f, 10000.0f);
+		Test.Transform = DirectX::XMMatrixTranspose(Test.model * Test.view * Test.projection);
+		buffer->Update(&Test, sizeof(Constants)); // fun
+		m_pShader->Bind();
+		for (int i = 0; i < (int)m_apGeometry.size(); i++) {
+			m_apIndexBuffers[i]->Bind();
+			m_apVertexBuffers[i]->Bind();
+			grcDeviced3d::Get()->context->DrawIndexed((UINT)this->m_apGeometry[i]->GetIndices().size(), 0, 0);
+		}
+	}
+	grcShaderGroup* GetShaderGroup() { return this->m_pShader; }
+	grcVertexBuffer** GetVertexBuffer() { return this->m_apVertexBuffers.data(); }
+	grcIndexBuffer** GetIndexBuffer() { return this->m_apIndexBuffers.data(); }
+	CCamera* camera = new CCamera();
+private:
+	struct Constants {
+		DirectX::XMMATRIX model;
+		DirectX::XMMATRIX view;
+		DirectX::XMMATRIX projection;
+		DirectX::XMMATRIX Transform;
+	}Test;
+	//CEntityDrawHandler* m_pDrawHandler;
+	grcCBuffer* buffer = new grcCBuffer(&Test, sizeof(Constants));
+	std::vector<grcGeometry*> m_apGeometry;
+	std::vector<grcVertexBuffer*> m_apVertexBuffers;
+	std::vector<grcIndexBuffer*> m_apIndexBuffers;
+	grcShaderGroup* m_pShader = nullptr;
+};
 class fwEntity {
 public:
 	fwEntity(grcModel* pModel) {
 		this->m_pModel = pModel; // replace but right now it works :\ 
+	}
+	fwEntity(grcModel_new* pModel) {
+		this->m_pNewModel = pModel;
 	}
 	void Update() {
 
 	}
 	grcModel* GetModel() {
 		return this->m_pModel;
+	}
+	grcModel_new* GetModelNew() {
+		return this->m_pNewModel;
 	}
 	sVector3& GetPosition() {
 		return position;
@@ -372,6 +427,7 @@ public:
 	}
 private:
 	grcModel* m_pModel = nullptr;
+	grcModel_new* m_pNewModel = nullptr;
 	sVector3 position;
 };
 class fwScene {
@@ -423,7 +479,9 @@ public:
 		if (auto* model = sm_pModelCache->GetModel(filePath)) {
 			return model;
 		}
-		grcModel* model = new grcModel(); // need to take a vector of points or just an ID3D11Buffer
+		ModelImporter importer = ModelImporter(filePath);
+		importer.FillImporter();
+		grcModel* model = new grcModel(importer.CreateGeometry()[0]); // need to take a vector of points or just an ID3D11Buffer
 		sm_pModelCache->Add(filePath, model);
 		return model;
 	}
@@ -466,7 +524,7 @@ public:
 	void ExecuteDrawLists() {
 		for (int i = 0; i < m_pEntities.size(); i++) {
 			fwEntity* entity = m_pEntities[i];
-			entity->GetModel()->Draw(entity->GetPosition().x, entity->GetPosition().y, entity->GetPosition().z);
+			entity->GetModelNew()->Draw(entity->GetPosition().x, entity->GetPosition().y, entity->GetPosition().z);
 		}
 		CGame::GetScene()->UnlockScene();
 		m_pEntities.clear(); // clear the cache of entities. 
@@ -485,7 +543,8 @@ public:
 		return m_pCurrentRenderSegment;
 	}
 	void Execute() {
-		for (auto* seg : m_RenderSegments) {
+		for (int i = 0; i < m_RenderSegments.size(); i++) {
+			CRenderSegment* seg = m_RenderSegments.data()[i];
 			this->m_pCurrentRenderSegment = seg;
 			seg->BuildDrawList();
 			seg->ExecuteDrawLists();
@@ -585,8 +644,15 @@ private:
 	void* m_pTexture = nullptr; // this is the stbi_image stuff not sure 
 	ID3D11Texture2D* m_pRawTexture = nullptr;
 };
+
 int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINSTANCE hPrevInstance, [[maybe_unused]] PWSTR pCmdLine, [[maybe_unused]] int nCmdShow)
 {
+	//CGameModelLoader<AssimpImport> m_AssimpModelImporter = CGameModelLoader<AssimpImport>("filename", 0 | 2 | 4 | 6);
+	ModelImporter* i = new ModelImporter("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\character-a.obj");
+	i->FillImporter();
+	auto geometry = i->CreateGeometry();
+	delete i;
+	i = nullptr; 
 	// Register the window class.
 	CWindow::Init(hInstance);
 	CGame::Init();
@@ -596,7 +662,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 	if (!raw_Dev) return 1; // failed
 	grcDeviced3d device = *raw_Dev; // Why not just make this NOT like this you know?
 	//device.Set(&device);
-	grcModel* model = grcModelFactory::CreateModel("C\\Windows\\System32\\test.obj"); // we don't create any differing model this is just to verify it works.
+	grcModel_new* model = new grcModel_new(geometry); // we don't create any differing model this is just to verify it works.
 	grcInputLayout iaLayout = grcInputLayout(model->GetShaderGroup()->GetVertexShader()); // move this into model since it relies on info of model
 	//float fClearCol[4] = { 0 / 255.0f, 0 / 255.0f, 32 / 255.0f, 255 / 255.0f }; 
 	MSG msg = { };
@@ -611,7 +677,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 	renderPass.InitClass();
 	//int x = 0, y = 0, comp = 0;
 	//stbi_uc* uc = stbi_load("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\char_social_club.jpg", &x, &y, &comp, 4); // oopse
-	grcTexture2D texture = grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\char_social_club.jpg");
+	grcTexture2D texture = grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\texture-a.png");
 	texture.GetShaderResource();
 	D3D11_SAMPLER_DESC sampDesc = {};
 	sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -631,14 +697,15 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 	renderPass.PushRenderTarget(grcDeviced3d::Get()->backBuffer);
 	fwEntity* entity = new fwEntity(model);
 	entity->SetPosition(0.5, 0.5, 0.5);
-	fwEntity* entity2 = new fwEntity(grcModelFactory::CreateModel("C\\Windows\\System32\\test.obj"));
+	fwEntity* entity2 = new fwEntity(model);
 	entity2->SetPosition(1, 1, 1);
 	CGame::GetScene()->AddEntityToScene(entity);
 	CGame::GetScene()->AddEntityToScene(entity2);
 	entity->SetPosition(-1, 0, -4);
-	//CGame::GetScene()->AddEntityToScene(entity);
+	CGame::GetScene()->AddEntityToScene(entity);
 	while (!m_bShouldClose)
 	{
+		//printf("Helllo CSTDIO");
 		//float fDelta = timer.GetDelta();
 		m_bShouldClose = HandleWindowMessages(&msg);
 		ImGui_ImplDX11_NewFrame();
@@ -675,11 +742,12 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 		//We could abstract this part out right now and setup so that we have some sort of intermingling of shader sampler shit. hmm.
 		renderPass.EndFrame(); // Does nothing but makes sense here. -- wow wonderful explaination get this guy a medal.
 		grcStateBlock::EndFrame(); // clear and await more instruction.
-
+		
 		//finalization of rendering. 
 		ImGui::Render();
 		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 		device.swapChain->Present(1, 0);
+		Sleep(0);
 	}
 	ImGui_ImplDX11_Shutdown();
 	ImGui_ImplWin32_Shutdown();

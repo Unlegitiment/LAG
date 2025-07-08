@@ -1,7 +1,7 @@
 #pragma once
 #include <d3d11.h>
-#include "Shader/Shadergroup.h"
-#include <device\device.h>
+#include "LAG\Shader\Shadergroup.h"
+#include <LAG\device\device.h>
 class grcInputLayout {
 public:
 	grcInputLayout(grcShaderVertex* shader) {

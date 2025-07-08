@@ -1,7 +1,7 @@
 #pragma once
 #include <d3d11.h>
 #include <vector>
-#include <device\device.h>
+#include <LAG\device\device.h>
 class grcStateBlock {
 public:
 	static void Init() {
@@ -36,8 +36,8 @@ private:
 	static ID3D11RasterizerState* CreateDefaultRasterState() {
 		ID3D11RasterizerState* ret = nullptr;
 		D3D11_RASTERIZER_DESC desc = {};
-		desc.CullMode = D3D11_CULL_BACK;
-		desc.FrontCounterClockwise = 0;
+		desc.CullMode = D3D11_CULL_NONE;
+		desc.FrontCounterClockwise = 1;
 		desc.FillMode = D3D11_FILL_SOLID;
 		HRESULT hr = grcDeviced3d::Get()->outDevice->CreateRasterizerState(&desc, &ret);
 		assert(SUCCEEDED(hr)); //cap that mf

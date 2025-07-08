@@ -1,7 +1,7 @@
 #pragma once
 #include <d3d11.h>
 #include "Buffer.h"
-#include <device\device.h>
+#include <LAG\device\device.h>
 class grcVertexBuffer {
 public:
 	grcVertexBuffer(void* data, UINT size, UINT stride) { // stride is equal to sizeof(T) * arraySize. So Ig take array size?

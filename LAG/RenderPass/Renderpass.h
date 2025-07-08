@@ -1,7 +1,7 @@
 #pragma once
 #include <unordered_map>
-#include <Shader\Shadergroup.h>
-#include <model\grcmodel.h>
+#include <LAG\Shader\Shadergroup.h>
+#include <LAG\model\grcmodel.h>
 #define RENDER_PASS_MAX_BUFFERS 5
 //class fwDrawCommand {
 //public:

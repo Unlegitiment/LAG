@@ -104,6 +104,9 @@
     <ClInclude Include="thirdparty\imstb_textedit.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="modelload.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="Assets\char_social_club.jpg">
