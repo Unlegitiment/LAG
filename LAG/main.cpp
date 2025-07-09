@@ -23,6 +23,8 @@
 #pragma comment( lib, "d3d11.lib" )       // direct3D library
 #pragma comment( lib, "dxgi.lib" )        // directx graphics interface
 #pragma comment( lib, "d3dcompiler.lib" ) // shader compiler
+//@@@@ Important! - On the next iteration of the renderer we need to successfully start working on Dynamic Vertex Stuff which is just gonna be specified/created when we create the vbo objects. Also scratch the grcGeometry concept. grcTexture should also only handle renderer specific stuff. Should be tied to a higher system that differenciated between texture reading/filenames and their raw data.
+// We basically just want a buffer between like REAL code like stbi_image loading and then like actual render stuff. 
 
 //namespace legit {
 //template<typename T = unsigned long long> using u64 = T;
@@ -351,8 +353,123 @@ private:
 struct sVector3 {
 	float x, y, z;
 };
-class grcModel_new {
+
+class grcTexture2D {
+
 public:
+	explicit grcTexture2D(const char* path) {
+		int x, y, comp;
+		this->m_pTexture = stbi_load(path, &x, &y, &comp, 4); // 4 is bc we need RGBA values but should be passed. but should specify in image config.  
+		D3D11_TEXTURE2D_DESC textureDesc = D3D11_TEXTURE2D_DESC();
+		textureDesc.Format = m_iFormat; // Should specify in constructor what we want the BYTE_STRIDE to be. (probably have a pre-arranged global list of shit)
+		textureDesc.Width = x;
+		textureDesc.Height = y;
+		textureDesc.Usage = D3D11_USAGE_DEFAULT;
+		textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		textureDesc.MipLevels = 1;
+		textureDesc.ArraySize = 1;
+		textureDesc.SampleDesc.Count = 1;
+		D3D11_SUBRESOURCE_DATA data = {};
+		data.pSysMem = this->m_pTexture;
+		data.SysMemPitch = x * m_iFormatStride; // its the per byte stride so like ie. 0xff'ff'ff'ff is 4 byte types that equal a colour per-pixel. three would be 0xff'ff'ff and would only be RGB ( this is my thoughprocess idrk if this is actually how it works )
+		if (grcDeviced3d::Get()->outDevice->CreateTexture2D(&textureDesc, &data, &m_pRawTexture) != S_OK) {
+			// must 
+			OutputDebugStringA("failed to create texture.");
+		}
+	}
+	ID3D11ShaderResourceView* GetShaderResource() {
+		if (m_pView) return m_pView; // no need to create if we already have it. might want to remove this bc it could be bad. if the texture corrupts or something
+		D3D11_SHADER_RESOURCE_VIEW_DESC desc = {};
+		desc.Format = m_iFormat; // This must be equal to textureDesc's Format. Cache format to class. 
+		desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		desc.Texture2D.MipLevels = 1;
+		ID3D11ShaderResourceView* srv = nullptr;
+		if (grcDeviced3d::Get()->outDevice->CreateShaderResourceView(this->m_pRawTexture, &desc, &srv) != S_OK) {
+			throw std::runtime_error(__FUNCTION__"[SRV] couldn't create resource view");
+		}
+		this->m_pView = srv;
+		return srv;
+	}
+	ID3D11Texture2D* GetRawTexture() {
+		return this->m_pRawTexture;
+	}
+	ID3D11ShaderResourceView** GetSRVPtr() { return &this->m_pView; }
+	~grcTexture2D() {
+		if (this->m_pView) {
+			m_pView->Release();
+			m_pView = nullptr;
+		}
+		m_pRawTexture->Release(); // gpu Texture
+		m_pRawTexture = nullptr; // Clear the Texture.
+		stbi_image_free(m_pTexture); // other texture. what physical mem? I mean its temp we don't write could just allocate it then send it to the GPU.  why store it in two places right?
+		m_pTexture = nullptr;
+	}
+private:
+	DXGI_FORMAT m_iFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+	int m_iFormatStride = 4;
+	ID3D11ShaderResourceView* m_pView = nullptr;
+	void* m_pTexture = nullptr; // this is the stbi_image stuff not sure 
+	ID3D11Texture2D* m_pRawTexture = nullptr;
+};
+class grcMaterial {
+public:
+	grcMaterial(std::vector<grcTexture2D*> texture) : m_Textures(texture){
+
+	}
+
+private:
+	std::vector<grcTexture2D*> m_Textures;
+};
+class grcMesh {
+public:
+	grcMesh(grcGeometry* pGeo, std::vector<grcTexture2D*> textures) : m_pGeometry(pGeo), m_vTextures(textures){
+		auto geo = pGeo->GetGeometry();
+		m_vvBuffer = new grcVertexBuffer(geo.data(), (UINT)(pGeo->GetGeometry().size() * sizeof(VertexSpecifier)), 5 * sizeof(float));
+		m_viBuffer = new grcIndexBuffer(pGeo->GetIndices().data(), (UINT)pGeo->GetIndices().size() * sizeof(int));
+	}
+	void DrawMesh() {
+		std::vector<ID3D11ShaderResourceView*> m_Srvs;
+		m_Srvs.reserve(m_vTextures.size());
+		for (auto* srv : m_vTextures) {
+			m_Srvs.push_back(srv->GetShaderResource());
+		}
+		grcDeviced3d::Get()->context->PSSetShaderResources(0, (UINT)m_vTextures.size(), m_Srvs.data());
+		m_vvBuffer->Bind();
+		m_viBuffer->Bind();
+		grcDeviced3d::Get()->context->DrawIndexed((UINT)m_pGeometry->GetIndices().size(), 0, 0);
+	}
+private:
+	grcGeometry* m_pGeometry;
+	grcVertexBuffer* m_vvBuffer;
+	grcIndexBuffer* m_viBuffer;
+	std::vector<grcTexture2D*> m_vTextures;
+};
+// So since models need to kinda give information to the actual render process (bc we need to pass buffers) we can just allocate stuff here and add some method like GetConstantBuffers() that allows me to set them up earlier than when we get here.
+// A lot nicer than trying to access the info here lmao. 
+// also get rid of the camera shit here move that to like the segment lmao. 
+class grcModel_new {
+private:
+	std::vector<grcMesh*> m_Meshes;
+public:
+	grcModel_new(std::vector<grcMesh*> mesh) : m_Meshes(mesh){
+		m_pShader = new grcShaderGroup(L"W:\\GTAV Scripts\\LAG\\shaders\\VertexShader.hlsl"); // Shader Module which means we have to read from mtl data or from model information Idk
+		if (buffer) m_pShader->AppendShaderConstantBuffer(0, buffer); // needs to be here lmao. 
+		CCameraMgr::Init();
+		int retVal = CCameraMgr::Get().PushNewCamera(camera);
+		CCameraMgr::Get().ActivateCamera(retVal); // woohoo.
+	}
+	void DrawItem(float x, float y, float z) {
+		this->camera->Update(); // move to scene have the current scene own the camera lend to Renderpass or just hand a smaller object. /shrug
+		Test.model = DirectX::XMMatrixRotationZ(0.0f) * DirectX::XMMatrixScaling(1, 1, 1) * DirectX::XMMatrixTranslation(x, y, z);
+		Test.view = camera->GetViewMatrix();
+		Test.projection = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(camera->Zoom), 1920.f / 1080.f, 0.5f, 10000.0f);
+		Test.Transform = DirectX::XMMatrixTranspose(Test.model * Test.view * Test.projection);
+		buffer->Update(&Test, sizeof(Constants)); // fun
+		m_pShader->Bind();
+		for (auto* mesh : m_Meshes) {
+			mesh->DrawMesh();
+		}
+	}
 	grcModel_new(std::vector<grcGeometry*> apGeo) : m_apGeometry(apGeo) {
 		m_pShader = new grcShaderGroup(L"W:\\GTAV Scripts\\LAG\\shaders\\VertexShader.hlsl"); // Shader Module which means we have to read from mtl data or from model information Idk
 		m_apVertexBuffers.resize(m_apGeometry.size());
@@ -376,11 +493,7 @@ public:
 		Test.Transform = DirectX::XMMatrixTranspose(Test.model * Test.view * Test.projection);
 		buffer->Update(&Test, sizeof(Constants)); // fun
 		m_pShader->Bind();
-		for (int i = 0; i < (int)m_apGeometry.size(); i++) {
-			m_apIndexBuffers[i]->Bind();
-			m_apVertexBuffers[i]->Bind();
-			grcDeviced3d::Get()->context->DrawIndexed((UINT)this->m_apGeometry[i]->GetIndices().size(), 0, 0);
-		}
+
 	}
 	grcShaderGroup* GetShaderGroup() { return this->m_pShader; }
 	grcVertexBuffer** GetVertexBuffer() { return this->m_apVertexBuffers.data(); }
@@ -524,7 +637,7 @@ public:
 	void ExecuteDrawLists() {
 		for (int i = 0; i < m_pEntities.size(); i++) {
 			fwEntity* entity = m_pEntities[i];
-			entity->GetModelNew()->Draw(entity->GetPosition().x, entity->GetPosition().y, entity->GetPosition().z);
+			entity->GetModelNew()->DrawItem(entity->GetPosition().x, entity->GetPosition().y, entity->GetPosition().z);
 		}
 		CGame::GetScene()->UnlockScene();
 		m_pEntities.clear(); // clear the cache of entities. 
@@ -587,68 +700,12 @@ private:
 	static inline grcDeviced3d* device = nullptr;
 };
 //how tf do I define what texture is lmao?
-class grcTexture2D {
 
-public:
-	explicit grcTexture2D(const char* path) {
-		int x, y, comp;
-		this->m_pTexture = stbi_load(path, &x, &y, &comp, 4); // 4 is bc we need RGBA values but should be passed. but should specify in image config.  
-		D3D11_TEXTURE2D_DESC textureDesc = D3D11_TEXTURE2D_DESC();
-		textureDesc.Format = m_iFormat; // Should specify in constructor what we want the BYTE_STRIDE to be. (probably have a pre-arranged global list of shit)
-		textureDesc.Width = x;
-		textureDesc.Height = y;
-		textureDesc.Usage = D3D11_USAGE_DEFAULT;
-		textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-		textureDesc.MipLevels = 1;
-		textureDesc.ArraySize = 1;
-		textureDesc.SampleDesc.Count = 1;
-		D3D11_SUBRESOURCE_DATA data = {};
-		data.pSysMem = this->m_pTexture;
-		data.SysMemPitch = x * m_iFormatStride; // its the per byte stride so like ie. 0xff'ff'ff'ff is 4 byte types that equal a colour per-pixel. three would be 0xff'ff'ff and would only be RGB ( this is my thoughprocess idrk if this is actually how it works )
-		if (grcDeviced3d::Get()->outDevice->CreateTexture2D(&textureDesc, &data, &m_pRawTexture) != S_OK) {
-			// must 
-			OutputDebugStringA("failed to create texture.");
-		}
-	}
-	ID3D11ShaderResourceView* GetShaderResource() {
-		if (m_pView) return m_pView; // no need to create if we already have it. might want to remove this bc it could be bad. if the texture corrupts or something
-		D3D11_SHADER_RESOURCE_VIEW_DESC desc = {};
-		desc.Format = m_iFormat; // This must be equal to textureDesc's Format. Cache format to class. 
-		desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-		desc.Texture2D.MipLevels = 1;
-		ID3D11ShaderResourceView* srv = nullptr;
-		if (grcDeviced3d::Get()->outDevice->CreateShaderResourceView(this->m_pRawTexture, &desc, &srv) != S_OK) {
-			throw std::runtime_error(__FUNCTION__"[SRV] couldn't create resource view");
-		}
-		this->m_pView = srv;
-		return srv;
-	}
-	ID3D11Texture2D* GetRawTexture() {
-		return this->m_pRawTexture;
-	}
-	ID3D11ShaderResourceView** GetSRVPtr() { return &this->m_pView; }
-	~grcTexture2D() {
-		if (this->m_pView) {
-			m_pView->Release();
-			m_pView = nullptr;
-		}
-		m_pRawTexture->Release(); // gpu Texture
-		m_pRawTexture = nullptr; // Clear the Texture.
-		stbi_image_free(m_pTexture); // other texture. what physical mem? I mean its temp we don't write could just allocate it then send it to the GPU.  why store it in two places right?
-		m_pTexture = nullptr;
-	}
-private:
-	DXGI_FORMAT m_iFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-	int m_iFormatStride = 4;
-	ID3D11ShaderResourceView* m_pView = nullptr;
-	void* m_pTexture = nullptr; // this is the stbi_image stuff not sure 
-	ID3D11Texture2D* m_pRawTexture = nullptr;
-};
 
 int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINSTANCE hPrevInstance, [[maybe_unused]] PWSTR pCmdLine, [[maybe_unused]] int nCmdShow)
 {
 	//CGameModelLoader<AssimpImport> m_AssimpModelImporter = CGameModelLoader<AssimpImport>("filename", 0 | 2 | 4 | 6);
-	ModelImporter* i = new ModelImporter("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\character-a.obj");
+	ModelImporter* i = new ModelImporter("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\dt1_11_dt1_tower.obj");
 	i->FillImporter();
 	auto geometry = i->CreateGeometry();
 	delete i;
@@ -662,7 +719,23 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 	if (!raw_Dev) return 1; // failed
 	grcDeviced3d device = *raw_Dev; // Why not just make this NOT like this you know?
 	//device.Set(&device);
-	grcModel_new* model = new grcModel_new(geometry); // we don't create any differing model this is just to verify it works.
+	grcTexture2D texture = grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\dt1_11_window_stack_mlw.jpg");
+	grcTexture2D unknownTexture = grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\missing.png");
+	//texture.GetShaderResource();
+	std::vector<std::vector<grcTexture2D*>> textures = { {nullptr},{nullptr},{nullptr},{nullptr},{nullptr},{nullptr}, {nullptr},{nullptr},{nullptr},{nullptr},{nullptr},{nullptr}, {nullptr}, {nullptr}, {nullptr}, {&texture}, {nullptr}}; // @ todo: ADD A FUCKING TEXTURE SYSTEM YOU DUNCE! ~Tysm <3
+
+	std::vector<grcMesh*> meshes;
+	for (int j = 0; j < (int)geometry.size(); j++) {
+		auto* geom = geometry[j];
+		if (textures.size() > j || textures[j].empty()) {
+			textures.push_back({ &unknownTexture }); // for now we'll probably just put this somewhere else. 
+		}
+		if (!textures[j][0]) {
+			textures[j][0] = { &unknownTexture };
+		}
+		meshes.push_back(new grcMesh(geom, textures[j])); // so we still hardcode the stuff here btw lmao so we are gonna get the same result. 
+	}
+	grcModel_new* model = new grcModel_new(meshes); // we don't create any differing model this is just to verify it works.
 	grcInputLayout iaLayout = grcInputLayout(model->GetShaderGroup()->GetVertexShader()); // move this into model since it relies on info of model
 	//float fClearCol[4] = { 0 / 255.0f, 0 / 255.0f, 32 / 255.0f, 255 / 255.0f }; 
 	MSG msg = { };
@@ -677,8 +750,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 	renderPass.InitClass();
 	//int x = 0, y = 0, comp = 0;
 	//stbi_uc* uc = stbi_load("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\char_social_club.jpg", &x, &y, &comp, 4); // oopse
-	grcTexture2D texture = grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\texture-a.png");
-	texture.GetShaderResource();
+
 	D3D11_SAMPLER_DESC sampDesc = {};
 	sampDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
 	sampDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
@@ -720,7 +792,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 		ImGui::SliderFloat("Z(Cam)", &model->camera->POSITION.m128_f32[2], -360, 360); // need to recalc pos
 		ImGui::SliderFloat("Yaw", &model->camera->Yaw, -360, 360);
 		ImGui::SliderFloat("Pitch", &model->camera->Pitch, -360, 360);
-		ImGui::SliderFloat("Zoom", &model->camera->Zoom, 0, 100);
+		ImGui::SliderFloat("Zoom", &model->camera->Zoom, 0.1f, 120);
 		if (ImGui::Button("Reset")) {
 			model->camera->POSITION = { 0.0,0.0,0.0,0.0f }; // make vector!
 			model->camera->FRONT = { 0.0,0.0,-1.0f };
@@ -728,7 +800,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 			model->camera->RIGHT;
 			model->camera->WORLDUP = { 0.0,1.0,0.0 };
 			model->camera->Yaw = -90.0;
-			model->camera->Pitch = 0.0f;
+			model->camera->Pitch = 90.0f;
 			model->camera->Zoom = 45.f;
 		}
 		ImGui::End();
@@ -736,7 +808,7 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 		GetClientRect((HWND)CWindow::GetHandle(), &winRect);
 		renderPass.BeginFrame();
 		iaLayout.Bind();
-		device.context->PSSetShaderResources(0, 1, texture.GetSRVPtr());
+		//device.context->PSSetShaderResources(0, 1, texture.GetSRVPtr());
 		device.context->PSSetSamplers(0, 1, &samplerState); // OOPSIES LMAO ( had this lower than the first render which means it wasn't used lmao
 		CRenderer::Render();
 		//We could abstract this part out right now and setup so that we have some sort of intermingling of shader sampler shit. hmm.

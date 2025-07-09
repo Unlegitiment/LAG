@@ -76,7 +76,7 @@ public:
 	const Scene* GetScene() const { return m_pScene; }
 	const Scene** GetScenePtr() { return &m_pScene; }
 	//Caller must delete geometry when it is necessary. 
-	std::vector<grcGeometry*> CreateGeometry() {
+	std::vector<grcGeometry*> CreateGeometry() { // technically a model. 
 		std::vector<grcGeometry*> SceneGeometry;
 		Recursive(this->m_pScene->mRootNode, SceneGeometry);
 		return SceneGeometry;
@@ -128,15 +128,20 @@ private:
 
 		return vec;
 	}
+#include <assimp/material.h>
 	std::vector<VertexSpecifier> GetVertexData(Mesh* mesh) const {
 		std::vector<VertexSpecifier> vertices;
 		if (!mesh || !mesh->HasPositions() || !mesh->HasTextureCoords(0)) return vertices;
+		mesh->mMaterialIndex;
+		aiMaterial* mat = m_pScene->mMaterials[mesh->mMaterialIndex];
+		aiString str;
+		if (mat->GetTexture(aiTextureType_AMBIENT, 0, &str) == aiReturn_SUCCESS) {
 
+		}
 		for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
 			const aiFace& face = mesh->mFaces[i];
 			for (unsigned int j = 0; j < face.mNumIndices; ++j) {
 				unsigned int index = face.mIndices[j];
-
 				const aiVector3D& pos = mesh->mVertices[index];
 				const aiVector3D& uv = mesh->mTextureCoords[0][index];
 
@@ -147,6 +152,9 @@ private:
 			}
 		}
 		return vertices;
+	}
+	std::vector<const char*> GetTextures() {
+	
 	}
 	grcGeometry* LoadOneModel(Mesh* mesh) const {
 		std::vector<VertexSpecifier> verts = GetVertexData(mesh);
