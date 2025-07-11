@@ -1,5 +1,6 @@
 #include "modelload.h"
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 #include <d3d11.h>       // D3D interface
 #include <dxgi.h>        // DirectX driver interface
@@ -393,16 +394,21 @@ public:
 	ID3D11Texture2D* GetRawTexture() {
 		return this->m_pRawTexture;
 	}
+	void* GetTexture() { return this->m_pTexture; }
 	ID3D11ShaderResourceView** GetSRVPtr() { return &this->m_pView; }
 	~grcTexture2D() {
 		if (this->m_pView) {
 			m_pView->Release();
 			m_pView = nullptr;
 		}
-		m_pRawTexture->Release(); // gpu Texture
-		m_pRawTexture = nullptr; // Clear the Texture.
-		stbi_image_free(m_pTexture); // other texture. what physical mem? I mean its temp we don't write could just allocate it then send it to the GPU.  why store it in two places right?
-		m_pTexture = nullptr;
+		if (m_pRawTexture) {
+			m_pRawTexture->Release(); // gpu Texture
+			m_pRawTexture = nullptr; // Clear the Texture.
+		}
+		if (m_pTexture) {
+			stbi_image_free(m_pTexture); // other texture. what physical mem? I mean its temp we don't write could just allocate it then send it to the GPU.  why store it in two places right?
+			m_pTexture = nullptr;
+		}
 	}
 private:
 	DXGI_FORMAT m_iFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -413,27 +419,260 @@ private:
 };
 class grcMaterial {
 public:
-	grcMaterial(std::vector<grcTexture2D*> texture) : m_Textures(texture){
+	using Texture = grcTexture2D;
+	using Textures = std::vector<Texture*>;
+	grcMaterial() = default;
+	grcMaterial(Textures texture) : m_Textures(texture){
 
 	}
-
+	bool DoesTextureExistAt(int geomSlotIdx) {
+		if (geomSlotIdx > m_Textures.size()) return false;
+		if (m_Textures[geomSlotIdx] == nullptr) return false;
+		return true;
+	}
+	bool IsEmpty() { return m_Textures.empty(); }
+	Textures& GetTextures() { return m_Textures; }
+	bool SetTextureAt(int index, Texture* texture) {
+		if (index > m_Textures.size()) { 
+			size_t diff = m_Textures.size() - index;
+			if (diff == 1) { // we'd like to push back. 
+				m_Textures.push_back(texture);
+				return true;
+			}
+			return false; 
+		}// index is greater than alloted textures. 
+		m_Textures[index] = texture;
+		return true;
+	}
+	void Bind() {
+		for (int i = 0; i < m_Textures.size(); i++) {
+			if (!m_Textures[i]) {
+				m_Textures[i] = new grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\missing.png");
+			}
+			m_Textures[i]->GetShaderResource();
+			grcDeviced3d::Get()->context->PSSetShaderResources(i, (UINT)1u, m_Textures[i]->GetSRVPtr()); // potentially the LEAST EFFICIENT way to  do this lmao. Should really just like do something else lmao. 
+		}
+	}
 private:
-	std::vector<grcTexture2D*> m_Textures;
+	Textures m_Textures;
+};
+
+template<typename MeshType, typename MatType, typename SceneType, typename eTextureType, typename OutTexture = grcTexture2D> struct TextureTypes {
+	using Mesh = typename MeshType;
+	using Material = typename MatType;
+	using Scene = typename SceneType;
+	using oTexture = typename OutTexture;
+	using iTextureEnumType = typename eTextureType;
+};
+template<typename T> class grcMaterialLoader {
+
+};
+#include <iostream>
+#include "assimp\Importer.hpp"
+#include "assimp\scene.h"
+#include "assimp\postprocess.h"
+#include <numeric>
+std::string FixPath(std::string str) {
+	for (auto& c : str) if (c == '/') c = '\\';
+	return str;
+}
+using Texture2D = grcTexture2D;
+#include <array>
+class TextureRecord {
+private:
+	void ClearAll() {
+		for (auto& vec : m_Textures) {
+			for (auto ptr : vec) delete ptr;
+			vec.clear();
+		}
+	}
+public:
+	TextureRecord(const TextureRecord&) = delete;
+	TextureRecord& operator=(const TextureRecord&) = delete;
+	TextureRecord(TextureRecord&& other) noexcept {
+		m_Textures = std::move(other.m_Textures);
+		// other.m_Textures cleared automatically
+	}
+
+	TextureRecord& operator=(TextureRecord&& other) noexcept {
+		if (this != &other) {
+			ClearAll();
+			m_Textures = std::move(other.m_Textures);
+		}
+		return *this;
+	}
+
+	static constexpr size_t CONTAINER_MAX = aiTextureType::aiTextureType_UNKNOWN + 1;
+	TextureRecord() = default;
+
+	// Add raw pointer, takes ownership
+	void AddTexture(aiTextureType type, Texture2D* texture) {
+		m_Textures[type].push_back(texture);
+	}
+
+	void ClearTexture(aiTextureType type) {
+		for (auto ptr : m_Textures[type]) {
+			delete ptr;
+		}
+		m_Textures[type].clear();
+	}
+
+	void ClearTexture(aiTextureType type, size_t index) {
+		if (index < m_Textures[type].size()) {
+			delete m_Textures[type][index];
+			m_Textures[type].erase(m_Textures[type].begin() + index);
+		}
+	}
+
+	Texture2D* GetTextureAt(aiTextureType ai, size_t idx) const {
+		if (idx >= m_Textures[ai].size()) return nullptr;
+		return m_Textures[ai][idx];
+	}
+
+	size_t GetAmountOfTexturesAtType(aiTextureType ai) const {
+		return m_Textures[ai].size();
+	}
+
+	size_t GetBounds() const { return CONTAINER_MAX; }
+
+	~TextureRecord() {
+		for (size_t i = 0; i < CONTAINER_MAX; ++i) {
+			ClearTexture(static_cast<aiTextureType>(i));
+		}
+	}
+private:
+	std::array<std::vector<Texture2D*>, CONTAINER_MAX> m_Textures;
+};
+class MaterialLoader {
+public:
+	MaterialLoader(const aiScene* scene, const aiMesh* target) : m_pTarget(target), m_pScene(scene) {}
+
+	Texture2D* GetSingleTexture(aiMaterial* material, aiTextureType type, unsigned int index) {
+		aiString temp;
+		material->GetTexture(type, index, &temp);
+		if (temp.length == 0) return nullptr;
+
+		std::string basePath = "W:\\GTAV Scripts\\LAG\\LAG\\Assets\\" + FixPath(temp.C_Str());
+		Texture2D* tex = new Texture2D(basePath.c_str());
+		if (!tex->GetTexture()) {
+			printf("Failed to load texture: %s\n", basePath.c_str());
+			delete tex;
+			return nullptr;
+		}
+		return tex;
+	}
+
+	TextureRecord GetTextureList(aiMaterial* material, aiTextureType type) {
+		TextureRecord list;
+		int count = material->GetTextureCount(type);
+		for (int i = 0; i < count; ++i) {
+			Texture2D* ptr = GetSingleTexture(material, type, i);
+			if (ptr && ptr->GetTexture()) {
+				list.AddTexture(type, ptr); // ownership transferred
+			}
+			else {
+				delete ptr;
+			}
+		}
+		return list;
+	}
+
+	std::vector<TextureRecord> GetTextures() {
+		int idx = m_pTarget->mMaterialIndex;
+		aiMaterial* material = m_pScene->mMaterials[idx];
+		std::vector<TextureRecord> ret;
+
+		for (int i = 0; i < aiTextureType::aiTextureType_UNKNOWN + 1; i++) {
+			TextureRecord record;
+			for (unsigned int j = 0; j < material->GetTextureCount((aiTextureType)i); j++) {
+				Texture2D* tex = GetSingleTexture(material, (aiTextureType)i, j);
+				if (tex) {
+					record.AddTexture((aiTextureType)i, tex);
+				}
+			}
+			ret.push_back(std::move(record));
+		}
+
+		return ret;
+	}
+private:
+	const aiScene* m_pScene = nullptr;
+	const aiMesh* m_pTarget = nullptr;
+};
+
+//using AssimpMaterialTypes = TextureTypes<aiMesh, aiMaterial, aiScene, aiTextureType>;
+//class grcMaterialLoader<AssimpMaterialTypes>{
+//public:
+//	using mtl = AssimpMaterialTypes::Material;
+//	using msh = AssimpMaterialTypes::Mesh;
+//	using scn = AssimpMaterialTypes::Scene;
+//	using oTxr = AssimpMaterialTypes::oTexture;
+//	using eiTxr = AssimpMaterialTypes::iTextureEnumType;
+//	grcMaterialLoader(scn* scene, msh* msh) : pScene(scene), pMesh(msh){
+//		mtlIndex = msh->mMaterialIndex;
+//	}
+//private:
+//	lit::u32 mtlIndex = 0;
+//	scn* pScene = nullptr;
+//	msh* pMesh = nullptr;
+//	mtl* pMtl = nullptr;
+//};
+class CVector3 {
+public:
+	float x, y, z; // sample.
+};
+class CVector2 {
+public:
+	float x, y;
+};
+struct VertexSpecifier {
+	VertexSpecifier(CVector3 v1, CVector2 v2) : vPos(v1), vUVCoord(v2) {};
+	CVector3 vPos;
+	CVector2 vUVCoord;
+};
+class grcGeometry { // geometry
+public:
+	grcGeometry(std::vector<VertexSpecifier> vertexpos, std::vector<lit::u32> indices) {
+		this->m_Geometry = vertexpos;
+		this->m_Indices = indices;
+		//this->m_UV = UV;
+	}
+	std::vector<VertexSpecifier>& GetGeometry() { return m_Geometry; }
+	std::vector<lit::u32>& GetIndices() { return m_Indices; }
+	std::vector<CVector2>& GetUV() { return m_UV; }
+private:
+	std::vector<VertexSpecifier> m_Geometry;
+	std::vector<lit::u32> m_Indices;
+	std::vector<CVector2> m_UV;
 };
 class grcMesh {
 public:
-	grcMesh(grcGeometry* pGeo, std::vector<grcTexture2D*> textures) : m_pGeometry(pGeo), m_vTextures(textures){
-		auto geo = pGeo->GetGeometry();
-		m_vvBuffer = new grcVertexBuffer(geo.data(), (UINT)(pGeo->GetGeometry().size() * sizeof(VertexSpecifier)), 5 * sizeof(float));
-		m_viBuffer = new grcIndexBuffer(pGeo->GetIndices().data(), (UINT)pGeo->GetIndices().size() * sizeof(int));
+	grcMesh(grcGeometry* pGeo, std::vector<grcTexture2D*> textures) : m_pGeometry(pGeo), m_Mat(textures){
+		Init();
+	}
+	grcMesh(grcGeometry* pGeo, grcMaterial material) : m_pGeometry(pGeo), m_Mat(material) {
+		Init();
+	}
+	grcMesh(grcGeometry* pGeo, std::vector<TextureRecord>&& textureRecord) : m_pGeometry(pGeo) , m_TextureRecord(std::move(textureRecord)){
+		Init();
+	}
+	void Init() {
+		auto geo = m_pGeometry->GetGeometry();
+		m_vvBuffer = new grcVertexBuffer(geo.data(), (UINT)(m_pGeometry->GetGeometry().size() * sizeof(VertexSpecifier)), 5 * sizeof(float));
+		m_viBuffer = new grcIndexBuffer(m_pGeometry->GetIndices().data(), (UINT)m_pGeometry->GetIndices().size() * sizeof(int));
 	}
 	void DrawMesh() {
-		std::vector<ID3D11ShaderResourceView*> m_Srvs;
-		m_Srvs.reserve(m_vTextures.size());
-		for (auto* srv : m_vTextures) {
-			m_Srvs.push_back(srv->GetShaderResource());
+		std::vector<ID3D11ShaderResourceView*> pShaderResources;
+		//m_Mat.Bind();
+		for (auto& texture : m_TextureRecord) {
+			for (int i = 0; i < texture.GetBounds(); i++) {
+				for (int j = 0; j < texture.GetAmountOfTexturesAtType((aiTextureType)i); j++) {
+					auto a = texture.GetTextureAt((aiTextureType)i, j);
+					pShaderResources.push_back(a->GetShaderResource());
+				}
+			}
 		}
-		grcDeviced3d::Get()->context->PSSetShaderResources(0, (UINT)m_vTextures.size(), m_Srvs.data());
+		grcDeviced3d::Get()->context->PSSetShaderResources(0u, (UINT)pShaderResources.size(), pShaderResources.data());
 		m_vvBuffer->Bind();
 		m_viBuffer->Bind();
 		grcDeviced3d::Get()->context->DrawIndexed((UINT)m_pGeometry->GetIndices().size(), 0, 0);
@@ -442,7 +681,8 @@ private:
 	grcGeometry* m_pGeometry;
 	grcVertexBuffer* m_vvBuffer;
 	grcIndexBuffer* m_viBuffer;
-	std::vector<grcTexture2D*> m_vTextures;
+	grcMaterial m_Mat;
+	std::vector<TextureRecord> m_TextureRecord;
 };
 // So since models need to kinda give information to the actual render process (bc we need to pass buffers) we can just allocate stuff here and add some method like GetConstantBuffers() that allows me to set them up earlier than when we get here.
 // A lot nicer than trying to access the info here lmao. 
@@ -451,12 +691,18 @@ class grcModel_new {
 private:
 	std::vector<grcMesh*> m_Meshes;
 public:
-	grcModel_new(std::vector<grcMesh*> mesh) : m_Meshes(mesh){
+	void Init() {
 		m_pShader = new grcShaderGroup(L"W:\\GTAV Scripts\\LAG\\shaders\\VertexShader.hlsl"); // Shader Module which means we have to read from mtl data or from model information Idk
 		if (buffer) m_pShader->AppendShaderConstantBuffer(0, buffer); // needs to be here lmao. 
 		CCameraMgr::Init();
 		int retVal = CCameraMgr::Get().PushNewCamera(camera);
 		CCameraMgr::Get().ActivateCamera(retVal); // woohoo.
+	}
+	grcModel_new(std::vector<grcMesh*> mesh) : m_Meshes(mesh){
+		Init();
+	}
+	grcModel_new(std::vector<grcMesh*> mesh, std::vector<TextureRecord*> records) {
+		Init();
 	}
 	void DrawItem(float x, float y, float z) {
 		this->camera->Update(); // move to scene have the current scene own the camera lend to Renderpass or just hand a smaller object. /shrug
@@ -515,18 +761,18 @@ private:
 };
 class fwEntity {
 public:
-	fwEntity(grcModel* pModel) {
-		this->m_pModel = pModel; // replace but right now it works :\ 
-	}
+	//fwEntity(grcModel* pModel) {
+	//	this->m_pModel = pModel; // replace but right now it works :\ 
+	//}
 	fwEntity(grcModel_new* pModel) {
 		this->m_pNewModel = pModel;
 	}
 	void Update() {
 
 	}
-	grcModel* GetModel() {
-		return this->m_pModel;
-	}
+	//grcModel* GetModel() {
+	//	return this->m_pModel;
+	//}
 	grcModel_new* GetModelNew() {
 		return this->m_pNewModel;
 	}
@@ -539,7 +785,7 @@ public:
 		this->position.z = z;
 	}
 private:
-	grcModel* m_pModel = nullptr;
+	//grcModel* m_pModel = nullptr;
 	grcModel_new* m_pNewModel = nullptr;
 	sVector3 position;
 };
@@ -562,58 +808,58 @@ private:
 	bool m_bCanEntitiesBeAddedToScene = true;
 	std::vector<fwEntity*> m_pEntities; // list of our entities in our current scene.
 };
-class grcModelCache {
-public:
-	friend class grcModelFactory;
-	void Add(const char* modelName, grcModel* model) {
-		if (GetModel(modelName)) return; // we don't want a double insert.
-		this->m_Models.insert({ modelName, model });
-	}
-	grcModel* GetModel(const char* modelName) { // should find a quick hash algo that allows me to do this automatically? Since I liked JOOAT maybe that? 
-		auto it = m_Models.find(modelName);
-		if (it == m_Models.end()) return nullptr; // we did not find the model.
-		return it->second;
-	}
-	void RemoveModel(const char* modelName) {
-		auto it = m_Models.find(modelName);
-		if (it == m_Models.end()) return; // did not find.
-		m_Models.erase(it);
-		return;
-	}
-private:
-	std::unordered_map<std::string, grcModel*> m_Models; // I seriously hate std::iterators. would rather step on legos after getting out of the shower 1000 times than write another it == m_Map.end()
-};
-class grcModelFactory {
-public:
-	static void Init() {
-		sm_pModelCache = new grcModelCache();
-	}
-	static grcModel* CreateModel(const char* filePath) {
-		if (auto* model = sm_pModelCache->GetModel(filePath)) {
-			return model;
-		}
-		ModelImporter importer = ModelImporter(filePath);
-		importer.FillImporter();
-		grcModel* model = new grcModel(importer.CreateGeometry()[0]); // need to take a vector of points or just an ID3D11Buffer
-		sm_pModelCache->Add(filePath, model);
-		return model;
-	}
-	static void Shutdown() {
-		for (auto [key, val] : sm_pModelCache->m_Models) {
-			delete val;
-			val = nullptr;
-		}
-		sm_pModelCache->m_Models.clear(); // clear the map since we are done with it.
-		delete sm_pModelCache;
-		sm_pModelCache = nullptr;
-	}
-private:
-	static inline grcModelCache* sm_pModelCache = nullptr;
-};
+//class grcModelCache {
+//public:
+//	friend class grcModelFactory;
+//	void Add(const char* modelName, grcModel* model) {
+//		if (GetModel(modelName)) return; // we don't want a double insert.
+//		this->m_Models.insert({ modelName, model });
+//	}
+//	grcModel* GetModel(const char* modelName) { // should find a quick hash algo that allows me to do this automatically? Since I liked JOOAT maybe that? 
+//		auto it = m_Models.find(modelName);
+//		if (it == m_Models.end()) return nullptr; // we did not find the model.
+//		return it->second;
+//	}
+//	void RemoveModel(const char* modelName) {
+//		auto it = m_Models.find(modelName);
+//		if (it == m_Models.end()) return; // did not find.
+//		m_Models.erase(it);
+//		return;
+//	}
+//private:
+//	std::unordered_map<std::string, grcModel*> m_Models; // I seriously hate std::iterators. would rather step on legos after getting out of the shower 1000 times than write another it == m_Map.end()
+//};
+//class grcModelFactory {
+//public:
+//	static void Init() {
+//		sm_pModelCache = new grcModelCache();
+//	}
+//	static grcModel* CreateModel(const char* filePath) {
+//		if (auto* model = sm_pModelCache->GetModel(filePath)) {
+//			return model;
+//		}
+//		ModelImporter importer = ModelImporter(filePath);
+//		importer.FillImporter();
+//		grcModel* model = new grcModel(importer.CreateGeometry()[0]); // need to take a vector of points or just an ID3D11Buffer
+//		sm_pModelCache->Add(filePath, model);
+//		return model;
+//	}
+//	static void Shutdown() {
+//		for (auto [key, val] : sm_pModelCache->m_Models) {
+//			delete val;
+//			val = nullptr;
+//		}
+//		sm_pModelCache->m_Models.clear(); // clear the map since we are done with it.
+//		delete sm_pModelCache;
+//		sm_pModelCache = nullptr;
+//	}
+//private:
+//	static inline grcModelCache* sm_pModelCache = nullptr;
+//};
 class CGame {
 public:
 	static void Init() {
-		grcModelFactory::Init();
+		//grcModelFactory::Init();
 		m_pScene = new fwScene();
 	}
 	static fwScene* GetScene() {
@@ -621,7 +867,7 @@ public:
 	}
 	static void Shutdown() {
 		delete m_pScene;
-		grcModelFactory::Shutdown();
+		//grcModelFactory::Shutdown();
 	}
 private:
 	static inline fwScene* m_pScene = nullptr;
@@ -702,14 +948,176 @@ private:
 //how tf do I define what texture is lmao?
 
 
+
+
+using AssimpImport = ImporterParams<Assimp::Importer, aiScene, aiMesh>;
+template<>
+class CGameModelLoader<AssimpImport> {
+private:
+	using Importer = typename AssimpImport::ImporterBase;
+	using Scene = typename AssimpImport::ImporterScene;
+	using Mesh = typename AssimpImport::Mesh;
+public:
+	CGameModelLoader(const char* fileName, lit::u32 flags = aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_FlipUVs) { // @Todo: Add Baggie of parameters here. For multi-compilations or just specify it inside of another thing. Eitherway need someway to do funnies. 
+		m_FileName = fileName;  // might not be safe. 
+		m_iFlags = flags;
+	}
+	void FillImporter() {
+		m_pScene = this->m_Importer.ReadFile(m_FileName, m_iFlags);
+		if (!m_pScene) {
+			throw std::exception("Model has failed to import.");
+		}
+	}
+	const Scene* GetScene() const { return m_pScene; }
+	const Scene** GetScenePtr() { return &m_pScene; }
+	//Caller must delete geometry when it is necessary. 
+	//std::vector<grcGeometry*> CreateGeometry() { // technically a model. 
+	//	std::vector<grcGeometry*> SceneGeometry;
+	//	Recursive(this->m_pScene->mRootNode, SceneGeometry);
+	//	return SceneGeometry;
+	//}
+	grcModel_new CreateModel() {
+		std::vector<grcMesh*> meshes;
+		Recursive(m_pScene->mRootNode, meshes);
+		return grcModel_new(meshes);
+	}
+private:
+	grcGeometry* Geo(aiNode* pNode) {
+		for (unsigned int i = 0; i < pNode->mNumMeshes; i++) {
+			unsigned int meshIndex = pNode->mMeshes[i];
+			aiMesh* mesh = m_pScene->mMeshes[meshIndex];
+			if (mesh->HasPositions()) {
+				return LoadOneModel(mesh);
+			}
+		}
+		return nullptr;
+	}
+	void CollectGeometry(aiNode* pNode, std::vector<grcGeometry*>& SceneGeometry) {
+		for (unsigned int i = 0; i < pNode->mNumMeshes; i++) {
+			unsigned int meshIndex = pNode->mMeshes[i];
+			aiMesh* mesh = m_pScene->mMeshes[meshIndex];
+			if (mesh->HasPositions()) {
+				SceneGeometry.push_back(LoadOneModel(mesh));
+			}
+		}
+		for (unsigned int i = 0; i < pNode->mNumChildren; i++) {
+			CollectGeometry(pNode->mChildren[i], SceneGeometry);
+		}
+	}
+
+	void Recursive(aiNode* pNode, std::vector<grcMesh*>& SceneMeshes) {
+		for (unsigned int i = 0; i < pNode->mNumMeshes; i++) {
+			unsigned int meshIndex = pNode->mMeshes[i];
+			aiMesh* mesh = m_pScene->mMeshes[meshIndex];
+
+			std::vector<grcGeometry*> geom;
+			CollectGeometry(pNode, geom); // Now clearly calls geometry version
+
+			for (auto a : geom) {
+				MaterialLoader m_Loader = MaterialLoader(m_pScene, mesh);
+				SceneMeshes.push_back(new grcMesh(a, std::move(m_Loader.GetTextures())));
+			}
+		}
+
+		for (unsigned int i = 0; i < pNode->mNumChildren; i++) {
+			Recursive(pNode->mChildren[i], SceneMeshes);
+		}
+	}
+	std::vector<lit::u32> GetIndices(Mesh* mesh) const {
+		if (!mesh || !mesh->HasFaces()) {
+			throw std::runtime_error("Passed mesh is either null or doesn't have faces.");
+		}
+		if (!(m_iFlags & aiProcess_Triangulate)) {
+			throw std::runtime_error("Failed to give triangulate flag to model initialization.");
+		}
+		std::vector<lit::u32> Indices;
+		Indices.reserve(mesh->mNumFaces * 3);
+		for (unsigned int i = 0; i < mesh->mNumFaces; i++) {
+			const aiFace& curFace = mesh->mFaces[i];
+			if (curFace.mNumIndices != 3) {
+				printf("Warning: Non-tri face found: %d indices\n", curFace.mNumIndices);
+				continue;
+			}
+			for (unsigned int j = 0; j < 3; j++) {
+				Indices.push_back(curFace.mIndices[j]);
+			}
+		}
+		return Indices;
+	}
+	std::vector<TextureRecord> GetTextures(aiMesh* mesh) {
+		MaterialLoader m_Loader = MaterialLoader(m_pScene, mesh);
+		return m_Loader.GetTextures();
+	}
+	std::vector<CVector2> GetUv(Mesh* mesh) const {
+		if (!mesh || !mesh->HasTextureCoords(0)) return {};
+
+		std::vector<CVector2> vec;
+		vec.reserve(mesh->mNumVertices);
+
+		for (unsigned int i = 0; i < mesh->mNumVertices; i++) {
+			aiVector3D uv = mesh->mTextureCoords[0][i];
+			vec.push_back({ uv.x, uv.y });
+		}
+
+		return vec;
+	}
+#include <assimp/material.h>
+	std::vector<VertexSpecifier> GetVertexData(Mesh* mesh) const {
+		std::vector<VertexSpecifier> vertices;
+		if (!mesh || !mesh->HasPositions() || !mesh->HasTextureCoords(0)) return vertices;
+		mesh->mMaterialIndex;
+		aiMaterial* mat = m_pScene->mMaterials[mesh->mMaterialIndex];
+		aiString str;
+		if (mat->GetTexture(aiTextureType_AMBIENT, 0, &str) == aiReturn_SUCCESS) {
+
+		}
+		for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
+			const aiFace& face = mesh->mFaces[i];
+			for (unsigned int j = 0; j < face.mNumIndices; ++j) {
+				unsigned int index = face.mIndices[j];
+				const aiVector3D& pos = mesh->mVertices[index];
+				const aiVector3D& uv = mesh->mTextureCoords[0][index];
+
+				vertices.push_back({
+					CVector3{ pos.x, pos.y, pos.z },
+					CVector2{ uv.x, uv.y }
+					});
+			}
+		}
+		return vertices;
+	}
+	grcGeometry* LoadOneModel(Mesh* mesh) const {
+		std::vector<VertexSpecifier> verts = GetVertexData(mesh);
+		std::vector<lit::u32> indices(verts.size());
+		std::iota(indices.begin(), indices.end(), 0);
+
+		return new grcGeometry(std::move(verts), std::move(indices));
+		//return new grcGeometry(GetVertexData(mesh), this->GetIndices(mesh)); // larger models are gonna be really annoying, but this should be done pretty much last or when the model actually NEEDS to be acquired from the game. 
+		// I kinda need a system around this that stores the models and allows me to fetch them via like their name or something like that? 
+	}
+	CVector3 ConvertModelVectorToCommon(aiVector3D& vec) const {
+		CVector3 ret{};
+		ret.x = vec.x;
+		ret.y = vec.y;
+		ret.z = vec.z;
+		return ret;
+	}
+private:
+	lit::u32 m_iFlags = 0;
+	const char* m_FileName = nullptr;
+	Importer m_Importer; // 
+	const Scene* m_pScene = nullptr;
+};
+using ModelImporter = CGameModelLoader<
+	AssimpImport
+>;
 int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINSTANCE hPrevInstance, [[maybe_unused]] PWSTR pCmdLine, [[maybe_unused]] int nCmdShow)
 {
 	//CGameModelLoader<AssimpImport> m_AssimpModelImporter = CGameModelLoader<AssimpImport>("filename", 0 | 2 | 4 | 6);
-	ModelImporter* i = new ModelImporter("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\dt1_11_dt1_tower.obj");
+	ModelImporter* i = new ModelImporter("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\mzbnk.obj");
 	i->FillImporter();
-	auto geometry = i->CreateGeometry();
-	delete i;
-	i = nullptr; 
+	//auto geometry = i->CreateGeometry();
+
 	// Register the window class.
 	CWindow::Init(hInstance);
 	CGame::Init();
@@ -719,23 +1127,16 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 	if (!raw_Dev) return 1; // failed
 	grcDeviced3d device = *raw_Dev; // Why not just make this NOT like this you know?
 	//device.Set(&device);
-	grcTexture2D texture = grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\dt1_11_window_stack_mlw.jpg");
-	grcTexture2D unknownTexture = grcTexture2D("W:\\GTAV Scripts\\LAG\\LAG\\Assets\\missing.png");
 	//texture.GetShaderResource();
-	std::vector<std::vector<grcTexture2D*>> textures = { {nullptr},{nullptr},{nullptr},{nullptr},{nullptr},{nullptr}, {nullptr},{nullptr},{nullptr},{nullptr},{nullptr},{nullptr}, {nullptr}, {nullptr}, {nullptr}, {&texture}, {nullptr}}; // @ todo: ADD A FUCKING TEXTURE SYSTEM YOU DUNCE! ~Tysm <3
-
-	std::vector<grcMesh*> meshes;
-	for (int j = 0; j < (int)geometry.size(); j++) {
-		auto* geom = geometry[j];
-		if (textures.size() > j || textures[j].empty()) {
-			textures.push_back({ &unknownTexture }); // for now we'll probably just put this somewhere else. 
-		}
-		if (!textures[j][0]) {
-			textures[j][0] = { &unknownTexture };
-		}
-		meshes.push_back(new grcMesh(geom, textures[j])); // so we still hardcode the stuff here btw lmao so we are gonna get the same result. 
-	}
-	grcModel_new* model = new grcModel_new(meshes); // we don't create any differing model this is just to verify it works.
+	//std::vector<grcMaterial> materials = { std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr}, std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr},std::vector<grcTexture2D*>{nullptr}, std::vector<grcTexture2D*>{nullptr}, std::vector<grcTexture2D*>{nullptr}, std::vector<grcTexture2D*>{nullptr}, std::vector<grcTexture2D*>{&texture}, std::vector<grcTexture2D*>{nullptr}}; // @ todo: ADD A FUCKING TEXTURE SYSTEM YOU DUNCE! ~Tysm <3
+	//std::vector<grcMaterial> Materials((int)geometry.size(), grcMaterial({ nullptr }));
+	//Materials[15] = grcMaterial({ &texture });
+	//std::vector<grcMesh*> meshes;
+	//for (int j = 0; j < (int)geometry.size(); j++){
+	//	auto* geom = geometry[j];
+	//	meshes.push_back(new grcMesh(geom, Materials[j])); // so we still hardcode the stuff here btw lmao so we are gonna get the same result. 
+	//}
+	grcModel_new* model = new grcModel_new(i->CreateModel()); // we don't create any differing model this is just to verify it works.
 	grcInputLayout iaLayout = grcInputLayout(model->GetShaderGroup()->GetVertexShader()); // move this into model since it relies on info of model
 	//float fClearCol[4] = { 0 / 255.0f, 0 / 255.0f, 32 / 255.0f, 255 / 255.0f }; 
 	MSG msg = { };
@@ -821,10 +1222,13 @@ int WINAPI wWinMain([[maybe_unused]] HINSTANCE hInstance, [[maybe_unused]] HINST
 		device.swapChain->Present(1, 0);
 		Sleep(0);
 	}
+	delete i;
+	i = nullptr;
 	ImGui_ImplDX11_Shutdown();
 	ImGui_ImplWin32_Shutdown();
 	ImGui::DestroyContext();
 	grcStateBlock::DestroyStateBlock();
+
 	//renderPass.DestroyClass();
 	return 0;
 }
